@@ -1,0 +1,156 @@
+import mysql from 'mysql2/promise';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+let dbObject;
+
+// 1. Set up standard connection pool
+const pool = mysql.createPool({
+  host: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT || '3306'),
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'support',
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
+});
+
+// 2. Test connection and set up fallback mock DB if MySQL is offline
+try {
+  const connection = await pool.getConnection();
+  console.log('Successfully connected to MySQL database.');
+  connection.release();
+  dbObject = pool;
+} catch (error) {
+  console.warn('\n======================================================');
+  console.warn('WARNING: Could not connect to local MySQL database.');
+  console.warn('Error detail:', error.message);
+  console.warn('---> Falling back to IN-MEMORY Mock Database for testing.');
+  console.warn('======================================================\n');
+  
+  // Seed initial help topics
+  const mockHelpTopics = [
+    { id: 1, name: 'Engine & Transmission', description: 'Issues related to engine performance, transmission, fuel system, or exhaust.' },
+    { id: 2, name: 'Electrical & Electronics', description: 'Issues with battery, wiring, instrument cluster, starter motor, alternator, or lights.' },
+    { id: 3, name: 'Chassis & Suspension', description: 'Issues regarding steering, brakes, suspension, axles, tires, or wheel alignment.' },
+    { id: 4, name: 'Warranty & AMC Claims', description: 'Queries regarding warranty coverages, claims, or Annual Maintenance Contracts (AMC).' },
+    { id: 5, name: 'General Inquiry / Feedback', description: 'Other questions, feedback about service center visits, or product suggestions.' }
+  ];
+  
+  const mockTickets = [];
+  const mockReplies = [];
+  
+  dbObject = {
+    isMock: true,
+    query: async (sql, params = []) => {
+      // 1. Get Help Topics
+      if (sql.includes('SELECT * FROM help_topics')) {
+        return [mockHelpTopics];
+      }
+      
+      // 2. Create Support Ticket
+      if (sql.includes('INSERT INTO tickets')) {
+        const [ticket_number, name, email, phone, help_topic_id, subject, description, priority] = params;
+        const newTicket = {
+          id: mockTickets.length + 1,
+          ticket_number,
+          name,
+          email,
+          phone,
+          help_topic_id: parseInt(help_topic_id),
+          subject,
+          description,
+          priority: priority || 'Low',
+          status: 'Open',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        mockTickets.push(newTicket);
+        return [{ insertId: newTicket.id }];
+      }
+      
+      // 3. Track Ticket (Email & Ticket Number)
+      if (sql.includes('FROM tickets t') && sql.includes('LOWER(t.email) = LOWER(?) AND t.ticket_number = ?')) {
+        const [emailParam, ticketNumberParam] = params;
+        const found = mockTickets.find(
+          t => t.email.toLowerCase() === emailParam.toLowerCase() && t.ticket_number.trim() === ticketNumberParam.trim()
+        );
+        if (found) {
+          const topic = mockHelpTopics.find(h => h.id === found.help_topic_id);
+          return [[{ ...found, help_topic_name: topic ? topic.name : 'General Inquiry' }]];
+        }
+        return [[]];
+      }
+      
+      // 4. Get Replies for a Ticket
+      if (sql.includes('SELECT * FROM ticket_replies WHERE ticket_id = ?')) {
+        const [ticketId] = params;
+        const foundReplies = mockReplies.filter(r => r.ticket_id === parseInt(ticketId));
+        return [foundReplies];
+      }
+      
+      // 5. Post a Reply on a Ticket
+      if (sql.includes('INSERT INTO ticket_replies')) {
+        const [ticket_id, sender, name, message] = params;
+        const newReply = {
+          id: mockReplies.length + 1,
+          ticket_id: parseInt(ticket_id),
+          sender,
+          name,
+          message,
+          created_at: new Date().toISOString()
+        };
+        mockReplies.push(newReply);
+        
+        // Update ticket updated_at
+        const ticketObj = mockTickets.find(t => t.id === parseInt(ticket_id));
+        if (ticketObj) {
+          ticketObj.updated_at = new Date().toISOString();
+        }
+        
+        return [{ insertId: newReply.id }];
+      }
+      
+      // 6. Staff Dashboard: List Tickets
+      if (sql.includes('SELECT t.*, ht.name AS help_topic_name FROM tickets t')) {
+        let results = mockTickets.map(t => {
+          const topic = mockHelpTopics.find(h => h.id === t.help_topic_id);
+          return { ...t, help_topic_name: topic ? topic.name : 'General Inquiry' };
+        });
+        
+        // Status filter
+        if (sql.includes('t.status = ?')) {
+          const status = params[0];
+          results = results.filter(t => t.status === status);
+        }
+        
+        // Priority filter
+        if (sql.includes('t.priority = ?')) {
+          const priority = params[params.length - 1]; // standard check
+          results = results.filter(t => t.priority === priority);
+        }
+        
+        // Return reverse chronological order
+        return [results.slice().reverse()];
+      }
+      
+      // 7. Staff: Update Ticket Status
+      if (sql.includes('UPDATE tickets SET status = ? WHERE id = ?')) {
+        const [status, ticketId] = params;
+        const ticketObj = mockTickets.find(t => t.id === parseInt(ticketId));
+        if (ticketObj) {
+          ticketObj.status = status;
+          ticketObj.updated_at = new Date().toISOString();
+          return [{ affectedRows: 1 }];
+        }
+        return [{ affectedRows: 0 }];
+      }
+      
+      return [[]];
+    }
+  };
+}
+
+export default dbObject;
