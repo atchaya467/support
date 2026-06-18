@@ -4,6 +4,19 @@ USE support;
 DROP TABLE IF EXISTS ticket_replies;
 DROP TABLE IF EXISTS tickets;
 DROP TABLE IF EXISTS help_topics;
+DROP TABLE IF EXISTS users;
+
+CREATE TABLE users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO users (email, password) VALUES
+('admin@example.com', 'admin123'),
+('user@example.com', 'user123'),
+('demo@example.com', 'demo123');
 
 CREATE TABLE help_topics (
     id INT AUTO_INCREMENT PRIMARY KEY,

@@ -41,11 +41,26 @@ try {
   
   const mockTickets = [];
   const mockReplies = [];
+  const mockUsers = [
+    { id: 1, email: 'admin@example.com', password: 'admin123', created_at: new Date().toISOString() },
+    { id: 2, email: 'user@example.com', password: 'user123', created_at: new Date().toISOString() },
+    { id: 3, email: 'demo@example.com', password: 'demo123', created_at: new Date().toISOString() },
+  ];
   
   dbObject = {
     isMock: true,
     query: async (sql, params = []) => {
       console.log('Mock DB Query:', sql, 'Params:', params);
+
+      // 0. User Login Query
+      if (sql.includes('SELECT * FROM users WHERE')) {
+        const [emailParam, passwordParam] = params;
+        const found = mockUsers.filter(
+          u => u.email.toLowerCase() === emailParam.toLowerCase() && u.password === passwordParam
+        );
+        return [found];
+      }
+
       // 1. Get Help Topics
       if (sql.includes('SELECT * FROM help_topics')) {
         return [mockHelpTopics];

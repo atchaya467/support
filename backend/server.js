@@ -19,6 +19,81 @@ function generateTicketNumber() {
   return `AL-${num}`;
 }
 
+// In-memory OTP store (email -> { otp, expiresAt })
+const otpStore = {};
+
+// Generate a 6-digit OTP
+function generateOtp() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+// --- User Login: Validate email + password, then send OTP ---
+app.post('/api/login', async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required.' });
+  }
+
+  try {
+    const [users] = await db.query(
+      'SELECT * FROM users WHERE LOWER(email) = LOWER(?) AND password = ?',
+      [email.trim(), password.trim()]
+    );
+
+    if (users.length === 0) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    // Generate OTP and store it (expires in 5 minutes)
+    const otp = generateOtp();
+    otpStore[email.trim().toLowerCase()] = {
+      otp,
+      expiresAt: Date.now() + 5 * 60 * 1000
+    };
+
+    console.log(`[OTP] Generated OTP ${otp} for ${email}`);
+
+    res.json({
+      message: 'Credentials verified. OTP sent to your email.',
+      otp // Included for demo purposes — remove in production
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Server error during login.' });
+  }
+});
+
+// --- Verify OTP to complete login ---
+app.post('/api/verify-otp', async (req, res) => {
+  const { email, otp } = req.body;
+
+  if (!email || !otp) {
+    return res.status(400).json({ error: 'Email and OTP are required.' });
+  }
+
+  const key = email.trim().toLowerCase();
+  const stored = otpStore[key];
+
+  if (!stored) {
+    return res.status(400).json({ error: 'No OTP was requested for this email. Please sign in again.' });
+  }
+
+  if (Date.now() > stored.expiresAt) {
+    delete otpStore[key];
+    return res.status(400).json({ error: 'OTP has expired. Please sign in again.' });
+  }
+
+  if (stored.otp !== otp.trim()) {
+    return res.status(401).json({ error: 'Invalid OTP code. Please try again.' });
+  }
+
+  // OTP verified — clean up
+  delete otpStore[key];
+
+  res.json({ message: 'OTP verified successfully. Login complete.', email: key });
+});
+
 // 1. Get all help topics (for form dropdown)
 app.get('/api/help-topics', async (req, res) => {
   try {
