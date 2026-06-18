@@ -13,10 +13,7 @@ CREATE TABLE users (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-INSERT INTO users (email, password) VALUES
-('admin@example.com', 'admin123'),
-('user@example.com', 'user123'),
-('demo@example.com', 'demo123');
+
 
 CREATE TABLE help_topics (
     id INT AUTO_INCREMENT PRIMARY KEY,
