@@ -11,7 +11,7 @@ import {
   Platform,
   Alert
 } from 'react-native';
-import { Search, ArrowLeft, RefreshCw, FileText, User, Truck, Calendar, MessageSquare, Send } from 'lucide-react-native';
+import { Search, ArrowLeft, RefreshCw, FileText, User, Calendar, MessageSquare, Send, ShieldAlert, Key, Lock } from 'lucide-react-native';
 import { API_BASE_URL, fetchWithTimeout } from '../config';
 
 export default function TrackTicket({ setView, trackCredentials, setTrackCredentials }) {
@@ -28,21 +28,42 @@ export default function TrackTicket({ setView, trackCredentials, setTrackCredent
   const [error, setError] = useState('');
   const [replySuccess, setReplySuccess] = useState(false);
 
+  // Verification CAPTCHA + OTP States
+  const [showVerification, setShowVerification] = useState(false);
+  const [captchaText, setCaptchaText] = useState('');
+  const [userCaptcha, setUserCaptcha] = useState('');
+  const [captchaChallenge, setCaptchaChallenge] = useState('');
+  const [otpText, setOtpText] = useState('');
+  const [userOtp, setUserOtp] = useState('');
+  const [verificationError, setVerificationError] = useState('');
+  const [pendingTicket, setPendingTicket] = useState(null);
+  const [pendingReplies, setPendingReplies] = useState([]);
+
   // Auto load ticket if credentials exist on mount
   useEffect(() => {
     if (trackCredentials?.email && trackCredentials?.ticketNumber) {
-      handleLookup(trackCredentials.email, trackCredentials.ticketNumber);
+      handleLookup(trackCredentials.email, trackCredentials.ticketNumber, true); // skip verification on active session
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Lookup API call
-  const handleLookup = async (customEmail, customNum) => {
-    setError('');
-    setTicket(null);
-    setReplies([]);
+  const generateCaptchaAndOtp = () => {
+    const val1 = Math.floor(Math.random() * 10) + 1;
+    const val2 = Math.floor(Math.random() * 10) + 1;
+    setCaptchaText((val1 + val2).toString());
+    setCaptchaChallenge(`${val1} + ${val2} = ?`);
+    setUserCaptcha('');
 
-    // Safeguard against event objects passed by direct onPress callbacks
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    setOtpText(code);
+    setUserOtp('');
+    setVerificationError('');
+  };
+
+  // Lookup API call
+  const handleLookup = async (customEmail, customNum, skipVerify = false) => {
+    setError('');
+    
     const validEmail = typeof customEmail === 'string' ? customEmail : '';
     const validNum = typeof customNum === 'string' ? customNum : '';
 
@@ -64,15 +85,21 @@ export default function TrackTicket({ setView, trackCredentials, setTrackCredent
         throw new Error(data.error || 'Ticket not found. Verify email and reference number.');
       }
 
-      setTicket(data);
-      // Save credentials to keep session
-      setTrackCredentials({ email: lookupEmail, ticketNumber: lookupNum });
-
       // 2. Fetch replies
+      let repliesData = [];
       const repliesResponse = await fetchWithTimeout(`${API_BASE_URL}/api/tickets/${data.id}/replies`);
       if (repliesResponse.ok) {
-        const repliesData = await repliesResponse.json();
+        repliesData = await repliesResponse.json();
+      }
+
+      if (skipVerify) {
+        setTicket(data);
         setReplies(repliesData);
+      } else {
+        setPendingTicket(data);
+        setPendingReplies(repliesData);
+        generateCaptchaAndOtp();
+        setShowVerification(true);
       }
     } catch (err) {
       setError(err.message || 'An unexpected connection error occurred.');
@@ -81,12 +108,35 @@ export default function TrackTicket({ setView, trackCredentials, setTrackCredent
     }
   };
 
+  const handleVerifyAccess = () => {
+    setVerificationError('');
+
+    if (userCaptcha.trim() !== captchaText) {
+      setVerificationError('CAPTCHA answer is incorrect.');
+      return;
+    }
+
+    if (userOtp.trim() !== otpText) {
+      setVerificationError('Verification OTP code is incorrect.');
+      return;
+    }
+
+    // Success - load ticket
+    setTicket(pendingTicket);
+    setReplies(pendingReplies);
+    setShowVerification(false);
+    
+    // Save session credentials
+    setTrackCredentials({ email: email.trim(), ticketNumber: ticketNumber.trim() });
+  };
+
   // Submit reply
   const handlePostReply = async () => {
     if (!newReply.trim()) return;
 
     setSubmittingReply(true);
     setReplySuccess(false);
+    setError('');
 
     try {
       const response = await fetchWithTimeout(`${API_BASE_URL}/api/tickets/${ticket.id}/replies`, {
@@ -123,6 +173,7 @@ export default function TrackTicket({ setView, trackCredentials, setTrackCredent
     setTrackCredentials(null);
     setEmail('');
     setTicketNumber('');
+    setShowVerification(false);
   };
 
   const formatDate = (dateString) => {
@@ -152,7 +203,79 @@ export default function TrackTicket({ setView, trackCredentials, setTrackCredent
     }
   };
 
-  // VIEW 1: LOOKUP SCREEN
+  // VIEW 1: SECURITY VERIFICATION SCREEN
+  if (showVerification) {
+    return (
+      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+        <View style={styles.card}>
+          <TouchableOpacity style={styles.backLink} onPress={() => setShowVerification(false)}>
+            <ArrowLeft size={16} color="#1E40AF" />
+            <Text style={styles.backLinkText}>Back to Search</Text>
+          </TouchableOpacity>
+
+          <View style={styles.securityHeader}>
+            <ShieldAlert size={36} color="#1E40AF" />
+            <Text style={styles.title}>Identity Verification</Text>
+            <Text style={styles.subtitle}>Please complete the CAPTCHA and OTP verification below to access ticket details.</Text>
+          </View>
+
+          {verificationError ? (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{verificationError}</Text>
+            </View>
+          ) : null}
+
+          {/* CAPTCHA Challenge */}
+          <Text style={styles.fieldLabel}>Solve Captcha Challenge</Text>
+          <View style={styles.captchaRow}>
+            <View style={styles.captchaDisplay}>
+              <Text style={styles.captchaText}>{captchaChallenge}</Text>
+            </View>
+            <TouchableOpacity style={styles.refreshBtn} onPress={generateCaptchaAndOtp}>
+              <RefreshCw size={14} color="#64748B" />
+            </TouchableOpacity>
+            <TextInput
+              style={[styles.input, { flex: 1, marginBottom: 0 }]}
+              placeholder="Result"
+              placeholderTextColor="#94A3B8"
+              keyboardType="number-pad"
+              value={userCaptcha}
+              onChangeText={setUserCaptcha}
+            />
+          </View>
+
+          {/* OTP Code Input */}
+          <Text style={styles.fieldLabel}>One-Time Password (OTP)</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter 6-digit OTP code"
+            placeholderTextColor="#94A3B8"
+            keyboardType="number-pad"
+            maxLength={6}
+            value={userOtp}
+            onChangeText={setUserOtp}
+          />
+
+          {/* Simulated Toast Delivery Notice */}
+          <View style={styles.demoOtpBox}>
+            <Key size={14} color="#1E40AF" />
+            <Text style={styles.demoOtpText}>
+              <Text style={{ fontWeight: '700' }}>SMS OTP Gateway:</Text> A simulated 6-digit OTP code of <Text style={{ fontWeight: '800', textDecorationLine: 'underline' }}>{otpText}</Text> was sent to your phone number: <Text style={{ fontWeight: '700' }}>{pendingTicket ? pendingTicket.phone : 'registered number'}</Text>.
+            </Text>
+          </View>
+
+          <TouchableOpacity style={[styles.btn, styles.btnPrimary]} onPress={handleVerifyAccess}>
+            <View style={styles.btnRow}>
+              <Lock size={16} color="#FFFFFF" />
+              <Text style={styles.btnPrimaryText}>Verify & Access Ticket</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    );
+  }
+
+  // VIEW 2: SEARCH LOOKUP SCREEN
   if (!ticket) {
     return (
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
@@ -192,7 +315,7 @@ export default function TrackTicket({ setView, trackCredentials, setTrackCredent
             onChangeText={setTicketNumber}
           />
 
-          <TouchableOpacity style={[styles.btn, styles.btnPrimary]} onPress={() => handleLookup()} disabled={loading}>
+          <TouchableOpacity style={[styles.btn, styles.btnPrimary]} onPress={() => handleLookup(email, ticketNumber)} disabled={loading}>
             {loading ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
@@ -207,7 +330,7 @@ export default function TrackTicket({ setView, trackCredentials, setTrackCredent
     );
   }
 
-  // VIEW 2: DETAILS & TIMELINE
+  // VIEW 3: TICKET DETAILS & CONVERSATION
   return (
     <KeyboardAvoidingView 
       style={{ flex: 1 }}
@@ -220,13 +343,25 @@ export default function TrackTicket({ setView, trackCredentials, setTrackCredent
           <Text style={styles.miniBtnText}>Back to Search</Text>
         </TouchableOpacity>
         
-        <TouchableOpacity style={styles.miniBtn} onPress={() => handleLookup(ticket.email, ticket.ticket_number)} disabled={loading}>
-          <RefreshCw size={12} color="#1E40AF" style={loading ? styles.spin : null} />
+        <TouchableOpacity style={styles.miniBtn} onPress={() => handleLookup(ticket.email, ticket.ticket_number, true)} disabled={loading}>
+          <RefreshCw size={12} color="#1E40AF" />
           <Text style={[styles.miniBtnText, { color: '#1E40AF' }]}>Refresh</Text>
         </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.container} contentContainerStyle={[styles.contentContainer, { paddingTop: 4 }]}>
+        {error ? (
+          <View style={[styles.errorBox, { marginBottom: 12 }]}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        ) : null}
+
+        {replySuccess ? (
+          <View style={[styles.successBox, { marginBottom: 12 }]}>
+            <Text style={styles.successText}>Reply posted successfully!</Text>
+          </View>
+        ) : null}
+
         {/* Ticket Header card */}
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
@@ -248,7 +383,6 @@ export default function TrackTicket({ setView, trackCredentials, setTrackCredent
             <Text style={styles.descText}>{ticket.description}</Text>
           </View>
 
-          {/* Details list in a grid-like box */}
           <View style={styles.detailsBox}>
             <View style={styles.detailsColumn}>
               <View style={styles.detailsHeader}>
@@ -274,7 +408,6 @@ export default function TrackTicket({ setView, trackCredentials, setTrackCredent
           <View style={styles.timelineContainer}>
             {replies.map((reply, idx) => (
               <View key={reply.id || idx} style={styles.timelineItem}>
-                {/* Visual marker dot */}
                 <View style={[
                   styles.timelineMarker, 
                   reply.sender === 'Staff' ? styles.markerStaff : styles.markerClient
@@ -391,6 +524,19 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: '#B91C1C',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  successBox: {
+    backgroundColor: '#D1FAE5',
+    borderLeftWidth: 4,
+    borderLeftColor: '#10B981',
+    padding: 12,
+    borderRadius: 6,
+    marginBottom: 16,
+  },
+  successText: {
+    color: '#065F46',
     fontSize: 13,
     fontWeight: '600',
   },
@@ -671,7 +817,59 @@ const styles = StyleSheet.create({
     color: '#475569',
     fontWeight: '700',
   },
-  spin: {
-    // Note: React Native spin animations require Animated, but standard styling works.
+  securityHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  captchaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  captchaDisplay: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    minWidth: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  captchaText: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#475569',
+    letterSpacing: 1.5,
+    fontStyle: 'italic',
+  },
+  refreshBtn: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    width: 38,
+    height: 38,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  demoOtpBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    gap: 8,
+    marginBottom: 16,
+  },
+  demoOtpText: {
+    fontSize: 11,
+    color: '#1E40AF',
+    flex: 1,
+    lineHeight: 15,
   },
 });

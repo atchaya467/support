@@ -16,7 +16,7 @@ export default function Home({ setView }) {
       >
         <Text style={styles.heroTitle}>Support Center</Text>
         <Text style={styles.heroDesc}>
-          Welcome to our modern commercial vehicle Help Desk. Open a new service request or monitor the real-time status of your active tickets.
+          Welcome to our modern Help Desk. Open a new service request or monitor the real-time status of your active tickets.
         </Text>
       </LinearGradient>
 
@@ -32,7 +32,7 @@ export default function Home({ setView }) {
             <Text style={styles.cardTitle}>Open New Ticket</Text>
           </View>
           <Text style={styles.cardDesc}>
-            Need roadside repairs or spare parts inspection? Log details about your vehicle and issue here.
+            Need repairs or spare parts inspection? Log details about your issue here.
           </Text>
           <TouchableOpacity 
             style={[styles.actionButton, { backgroundColor: '#1E40AF' }]}

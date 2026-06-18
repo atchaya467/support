@@ -7,7 +7,8 @@ import {
   TouchableOpacity, 
   StatusBar, 
   Platform,
-  Animated
+  Animated,
+  ScrollView
 } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Home as HomeIcon, FileText, Search, ShieldAlert, LifeBuoy } from 'lucide-react-native';
@@ -18,30 +19,28 @@ import SubmitTicket from './pages/SubmitTicket';
 import TrackTicket from './pages/TrackTicket';
 import StaffDashboard from './pages/StaffDashboard';
 
-// 1. Premium Fade & Slide Up Page Transition Wrapper
+// Premium Fade & Slide Up Page Transition Wrapper
 function FadeInView({ children }) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(15)).current;
+  const slideAnim = useRef(new Animated.Value(10)).current;
 
   useEffect(() => {
-    // Reset animation values
     fadeAnim.setValue(0);
-    slideAnim.setValue(15);
+    slideAnim.setValue(10);
     
-    // Play transition
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 350,
+        duration: 300,
         useNativeDriver: true,
       }),
       Animated.timing(slideAnim, {
         toValue: 0,
-        duration: 350,
+        duration: 300,
         useNativeDriver: true,
       })
     ]).start();
-  }, []); // Triggers only when component mounts (on page changes due to key prop)
+  }, []);
 
   return (
     <Animated.View
@@ -56,48 +55,19 @@ function FadeInView({ children }) {
   );
 }
 
-// 2. Tactile Bounce Press Navigation Tab Button
-function AnimatedTabButton({ active, onPress, children }) {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-
-  const handlePressIn = () => {
-    Animated.spring(scaleAnim, {
-      toValue: 0.90,
-      tension: 100,
-      friction: 5,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const handlePressOut = () => {
-    Animated.spring(scaleAnim, {
-      toValue: 1,
-      tension: 150,
-      friction: 4,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  return (
-    <TouchableOpacity
-      activeOpacity={0.9}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      onPress={onPress}
-      style={styles.tabButton}
-    >
-      <Animated.View style={{ transform: [{ scale: scaleAnim }], alignItems: 'center' }}>
-        {children}
-      </Animated.View>
-    </TouchableOpacity>
-  );
-}
-
 export default function App() {
   const [currentView, setView] = useState('home');
   const [trackCredentials, setTrackCredentials] = useState(null);
+  
+  // Shared Staff Authentication state
+  const [isStaffAuthenticated, setIsStaffAuthenticated] = useState(false);
 
-  // Render the active screen with the FadeInView wrapper
+  const handleStaffSignOut = () => {
+    setIsStaffAuthenticated(false);
+    setView('home');
+  };
+
+  // Render the active screen
   const renderScreen = () => {
     let screen;
     switch (currentView) {
@@ -122,7 +92,13 @@ export default function App() {
         );
         break;
       case 'staff-dashboard':
-        screen = <StaffDashboard setView={setView} />;
+        screen = (
+          <StaffDashboard 
+            setView={setView} 
+            isAuthenticated={isStaffAuthenticated}
+            setIsAuthenticated={setIsStaffAuthenticated}
+          />
+        );
         break;
       default:
         screen = <Home setView={setView} />;
@@ -140,84 +116,93 @@ export default function App() {
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-        {/* Brand Header */}
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.brandContainer} onPress={() => setView('home')}>
-            <View style={styles.logoBox}>
-              <LifeBuoy size={22} color="#FFFFFF" />
-            </View>
-            <View>
+        <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
+          {/* Web-Style Header Container */}
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.brandContainer} onPress={() => setView('home')}>
               <Text style={styles.brandTitle}>SUPPORT CENTER</Text>
               <Text style={styles.brandSubtitle}>Support Ticket System</Text>
-            </View>
-          </TouchableOpacity>
+            </TouchableOpacity>
 
-          <View style={styles.roleContainer}>
-            <Text style={styles.roleText}>
-              {currentView === 'staff-dashboard' ? 'Staff Operator' : 'Client Guest'}
+            {/* Top Right: User Sign In/Sign Out Link */}
+            <View style={styles.topRight}>
+              {isStaffAuthenticated ? (
+                <View style={styles.topRightRow}>
+                  <Text style={styles.userNameText}>Staff Operator</Text>
+                  <Text style={styles.divider}>|</Text>
+                  <TouchableOpacity onPress={handleStaffSignOut}>
+                    <Text style={styles.signInLink}>Sign Out</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.topRightRow}>
+                  <Text style={styles.userNameText}>Guest User</Text>
+                  <Text style={styles.divider}>|</Text>
+                  <TouchableOpacity onPress={() => setView('staff-dashboard')}>
+                    <Text style={styles.signInLink}>Sign In</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          </View>
+
+          {/* Web-Style Horizontal Navigation Bar */}
+          <View style={styles.navigationBar}>
+            <TouchableOpacity 
+              style={[styles.navTab, currentView === 'home' && styles.navTabActive]} 
+              onPress={() => setView('home')}
+            >
+              <HomeIcon size={14} color={currentView === 'home' ? '#2563EB' : '#475569'} style={styles.navIcon} />
+              <Text style={[styles.navLabel, currentView === 'home' && styles.navLabelActive]}>
+                Support Center Home
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.navTab, currentView === 'submit-ticket' && styles.navTabActive]} 
+              onPress={() => setView('submit-ticket')}
+            >
+              <FileText size={14} color={currentView === 'submit-ticket' ? '#2563EB' : '#475569'} style={styles.navIcon} />
+              <Text style={[styles.navLabel, currentView === 'submit-ticket' && styles.navLabelActive]}>
+                Open a New Ticket
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.navTab, currentView === 'track-ticket' && styles.navTabActive]} 
+              onPress={() => setView('track-ticket')}
+            >
+              <Search size={14} color={currentView === 'track-ticket' ? '#2563EB' : '#475569'} style={styles.navIcon} />
+              <Text style={[styles.navLabel, currentView === 'track-ticket' && styles.navLabelActive]}>
+                Check Ticket Status
+              </Text>
+            </TouchableOpacity>
+
+            {isStaffAuthenticated && (
+              <TouchableOpacity 
+                style={[styles.navTab, currentView === 'staff-dashboard' && styles.navTabActive]} 
+                onPress={() => setView('staff-dashboard')}
+              >
+                <ShieldAlert size={14} color={currentView === 'staff-dashboard' ? '#2563EB' : '#475569'} style={styles.navIcon} />
+                <Text style={[styles.navLabel, currentView === 'staff-dashboard' && styles.navLabelActive]}>
+                  Ticket List (Staff Panel)
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Main Viewport */}
+          <View style={styles.mainContainer}>
+            {renderScreen()}
+          </View>
+
+          {/* Web-Style Footer */}
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>
+              Copyright &copy; 2026 osTicket :: Support Ticket System - All rights reserved.
             </Text>
           </View>
-        </View>
-
-        {/* Main Screen Viewport */}
-        <View style={styles.mainContainer}>
-          {renderScreen()}
-        </View>
-
-        {/* Bottom Navigation Tab Bar */}
-        <View style={styles.tabBar}>
-          <AnimatedTabButton 
-            active={currentView === 'home'} 
-            onPress={() => setView('home')}
-          >
-            <HomeIcon 
-              size={20} 
-              color={currentView === 'home' ? '#2563EB' : '#64748B'} 
-            />
-            <Text style={[styles.tabLabel, currentView === 'home' && styles.tabLabelActive]}>
-              Home
-            </Text>
-          </AnimatedTabButton>
-
-          <AnimatedTabButton 
-            active={currentView === 'submit-ticket'} 
-            onPress={() => setView('submit-ticket')}
-          >
-            <FileText 
-              size={20} 
-              color={currentView === 'submit-ticket' ? '#2563EB' : '#64748B'} 
-            />
-            <Text style={[styles.tabLabel, currentView === 'submit-ticket' && styles.tabLabelActive]}>
-              New Ticket
-            </Text>
-          </AnimatedTabButton>
-
-          <AnimatedTabButton 
-            active={currentView === 'track-ticket'} 
-            onPress={() => setView('track-ticket')}
-          >
-            <Search 
-              size={20} 
-              color={currentView === 'track-ticket' ? '#2563EB' : '#64748B'} 
-            />
-            <Text style={[styles.tabLabel, currentView === 'track-ticket' && styles.tabLabelActive]}>
-              Track
-            </Text>
-          </AnimatedTabButton>
-
-          <AnimatedTabButton 
-            active={currentView === 'staff-dashboard'} 
-            onPress={() => setView('staff-dashboard')}
-          >
-            <ShieldAlert 
-              size={20} 
-              color={currentView === 'staff-dashboard' ? '#2563EB' : '#64748B'} 
-            />
-            <Text style={[styles.tabLabel, currentView === 'staff-dashboard' && styles.tabLabelActive]}>
-              Staff Desk
-            </Text>
-          </AnimatedTabButton>
-        </View>
+        </ScrollView>
       </SafeAreaView>
     </SafeAreaProvider>
   );
@@ -226,94 +211,125 @@ export default function App() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FFFFFF',
+  },
+  scrollContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: Platform.OS === 'web' ? '10%' : 12,
+    paddingTop: 16,
+    paddingBottom: 20,
   },
   header: {
-    height: 60,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    paddingVertical: 16,
     backgroundColor: '#FFFFFF',
+  },
+  brandContainer: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+  },
+  brandTitle: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: '#000000',
+    letterSpacing: -0.5,
+  },
+  brandSubtitle: {
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '600',
+    marginTop: -2,
+  },
+  topRight: {
+    paddingBottom: 4,
+  },
+  topRightRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+  },
+  userNameText: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '500',
+  },
+  divider: {
+    fontSize: 12,
+    color: '#CBD5E1',
+    marginHorizontal: 8,
+  },
+  signInLink: {
+    fontSize: 12,
+    color: '#0284C7',
+    fontWeight: '700',
+    textDecorationLine: 'underline',
+  },
+  navigationBar: {
+    height: 40,
+    backgroundColor: '#F1F5F9',
+    borderColor: '#E2E8F0',
+    borderWidth: 1,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    marginBottom: 20,
     ...Platform.select({
       ios: {
         shadowColor: '#0F172A',
-        shadowOffset: { width: 0, height: 2 },
+        shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.05,
-        shadowRadius: 3,
+        shadowRadius: 2,
       },
       android: {
-        elevation: 2,
+        elevation: 1,
       },
     }),
   },
-  brandContainer: {
+  navTab: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-  },
-  logoBox: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
-    backgroundColor: '#1E40AF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  brandTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#0F172A',
-    letterSpacing: -0.2,
-  },
-  brandSubtitle: {
-    fontSize: 10,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  roleContainer: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    height: 28,
+    paddingHorizontal: 12,
     borderRadius: 6,
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
+    marginRight: 6,
   },
-  roleText: {
-    fontSize: 10,
-    color: '#1E40AF',
+  navTabActive: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  navIcon: {
+    marginRight: 6,
+  },
+  navLabel: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  navLabelActive: {
+    color: '#2563EB',
     fontWeight: '700',
-    textTransform: 'uppercase',
   },
   mainContainer: {
     flex: 1,
+    minHeight: 450,
   },
-  tabBar: {
-    height: 60,
-    backgroundColor: '#FFFFFF',
+  footer: {
+    marginTop: 30,
     borderTopWidth: 1,
     borderTopColor: '#E2E8F0',
-    flexDirection: 'row',
+    paddingTop: 16,
     alignItems: 'center',
-    justifyContent: 'space-around',
-    paddingBottom: Platform.OS === 'ios' ? 10 : 0,
   },
-  tabButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    width: 80,
-  },
-  tabLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#64748B',
-    marginTop: 4,
-  },
-  tabLabelActive: {
-    color: '#2563EB',
-    fontWeight: '700',
+  footerText: {
+    fontSize: 11,
+    color: '#94A3B8',
+    textAlign: 'center',
   },
 });

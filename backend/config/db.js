@@ -10,7 +10,7 @@ const pool = mysql.createPool({
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '3306'),
   user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
+  password: process.env.DB_PASSWORD || 'anil',
   database: process.env.DB_NAME || 'support',
   waitForConnections: true,
   connectionLimit: 10,
@@ -45,6 +45,7 @@ try {
   dbObject = {
     isMock: true,
     query: async (sql, params = []) => {
+      console.log('Mock DB Query:', sql, 'Params:', params);
       // 1. Get Help Topics
       if (sql.includes('SELECT * FROM help_topics')) {
         return [mockHelpTopics];
@@ -75,7 +76,8 @@ try {
       if (sql.includes('FROM tickets t') && sql.includes('LOWER(t.email) = LOWER(?) AND t.ticket_number = ?')) {
         const [emailParam, ticketNumberParam] = params;
         const found = mockTickets.find(
-          t => t.email.toLowerCase() === emailParam.toLowerCase() && t.ticket_number.trim() === ticketNumberParam.trim()
+          t => t.email && emailParam && t.email.toLowerCase() === emailParam.toLowerCase() && 
+               t.ticket_number && ticketNumberParam && t.ticket_number.trim().toLowerCase() === ticketNumberParam.trim().toLowerCase()
         );
         if (found) {
           const topic = mockHelpTopics.find(h => h.id === found.help_topic_id);
@@ -114,7 +116,7 @@ try {
       }
       
       // 6. Staff Dashboard: List Tickets
-      if (sql.includes('SELECT t.*, ht.name AS help_topic_name FROM tickets t')) {
+      if (sql.includes('FROM tickets t') && !sql.includes('LOWER(t.email)')) {
         let results = mockTickets.map(t => {
           const topic = mockHelpTopics.find(h => h.id === t.help_topic_id);
           return { ...t, help_topic_name: topic ? topic.name : 'General Inquiry' };
@@ -142,6 +144,27 @@ try {
         const ticketObj = mockTickets.find(t => t.id === parseInt(ticketId));
         if (ticketObj) {
           ticketObj.status = status;
+          ticketObj.updated_at = new Date().toISOString();
+          return [{ affectedRows: 1 }];
+        }
+        return [{ affectedRows: 0 }];
+      }
+
+      // 8. Check if ticket exists
+      if (sql.includes('SELECT id FROM tickets WHERE id = ?')) {
+        const [ticketId] = params;
+        const found = mockTickets.find(t => t.id === parseInt(ticketId));
+        if (found) {
+          return [[{ id: found.id }]];
+        }
+        return [[]];
+      }
+
+      // 9. Update ticket updated_at
+      if (sql.includes('UPDATE tickets SET updated_at = CURRENT_TIMESTAMP WHERE id = ?')) {
+        const [ticketId] = params;
+        const ticketObj = mockTickets.find(t => t.id === parseInt(ticketId));
+        if (ticketObj) {
           ticketObj.updated_at = new Date().toISOString();
           return [{ affectedRows: 1 }];
         }

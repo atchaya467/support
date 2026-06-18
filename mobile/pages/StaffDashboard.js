@@ -14,15 +14,22 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Picker } from '@react-native-picker/picker';
-import { Filter, RefreshCw, X, MessageSquare, Send, Check, AlertCircle, FileText, User, Truck } from 'lucide-react-native';
+import { Filter, RefreshCw, X, MessageSquare, Send, Check, AlertCircle, FileText, User, Lock, Eye, EyeOff, Shield } from 'lucide-react-native';
 import { API_BASE_URL, fetchWithTimeout } from '../config';
 
-export default function StaffDashboard() {
+export default function StaffDashboard({ isAuthenticated, setIsAuthenticated }) {
   const [tickets, setTickets] = useState([]);
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [replies, setReplies] = useState([]);
   const [newReply, setNewReply] = useState('');
   
+  // Authentication states
+  const [emailInput, setEmailInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  const [authenticating, setAuthenticating] = useState(false);
+
   // Filters
   const [statusFilter, setStatusFilter] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
@@ -36,10 +43,41 @@ export default function StaffDashboard() {
   const [statusSuccess, setStatusSuccess] = useState(false);
   const [error, setError] = useState('');
 
-  // Load tickets on mount & when filters change
+  // Load tickets on mount & when filters change (only if authenticated)
   useEffect(() => {
-    fetchTickets();
-  }, [statusFilter, priorityFilter]);
+    if (isAuthenticated) {
+      fetchTickets();
+    }
+  }, [statusFilter, priorityFilter, isAuthenticated]);
+
+  const handleLogin = () => {
+    setLoginError('');
+    if (!emailInput.trim() || !passwordInput) {
+      setLoginError('Please enter both your staff email and password.');
+      return;
+    }
+
+    setAuthenticating(true);
+    // Simulate API delay
+    setTimeout(() => {
+      const cleanEmail = emailInput.trim().toLowerCase();
+      if (cleanEmail === 'admin@forte.com' && passwordInput === 'forte2026') {
+        setIsAuthenticated(true);
+        setLoginError('');
+      } else {
+        setLoginError('Invalid staff email address or password credentials.');
+      }
+      setAuthenticating(false);
+    }, 600);
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setEmailInput('');
+    setPasswordInput('');
+    setTickets([]);
+    setSelectedTicket(null);
+  };
 
   const fetchTickets = async () => {
     setLoading(true);
@@ -164,6 +202,71 @@ export default function StaffDashboard() {
     }
   };
 
+  // VIEW 1: STAFF LOGIN CARD SCREEN
+  if (!isAuthenticated) {
+    return (
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView style={styles.container} contentContainerStyle={styles.loginContentContainer}>
+          <View style={styles.loginCard}>
+            <View style={styles.loginIconWrapper}>
+              <Shield size={32} color="#1E40AF" />
+            </View>
+            <Text style={styles.loginTitle}>Staff Operator Portal</Text>
+            <Text style={styles.loginSubtitle}>Access control restricted to authorized support operators. Enter details below to log in.</Text>
+
+            {loginError ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{loginError}</Text>
+              </View>
+            ) : null}
+
+            <Text style={styles.fieldLabel}>Staff Email Address</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. name@fortecars.com"
+              placeholderTextColor="#94A3B8"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              value={emailInput}
+              onChangeText={setEmailInput}
+            />
+
+            <Text style={styles.fieldLabel}>Operator Password</Text>
+            <View style={styles.passwordRow}>
+              <TextInput
+                style={[styles.input, { flex: 1, marginBottom: 0, borderWidth: 0, paddingVertical: 10 }]}
+                placeholder="Enter password"
+                placeholderTextColor="#94A3B8"
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                value={passwordInput}
+                onChangeText={setPasswordInput}
+              />
+              <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowPassword(!showPassword)}>
+                {showPassword ? <EyeOff size={16} color="#64748B" /> : <Eye size={16} color="#64748B" />}
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity style={[styles.btn, styles.btnPrimary, { marginTop: 24 }]} onPress={handleLogin} disabled={authenticating}>
+              {authenticating ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <View style={styles.btnRow}>
+                  <Lock size={16} color="#FFFFFF" />
+                  <Text style={styles.btnPrimaryText}>Secure Sign In</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
+  }
+
+  // VIEW 2: OPERATOR TICKET LIST DESK
   return (
     <View style={styles.container}>
       
@@ -171,9 +274,14 @@ export default function StaffDashboard() {
       <View style={styles.filterBar}>
         <View style={styles.filterHeader}>
           <Text style={styles.title}>Operator Desk</Text>
-          <TouchableOpacity style={styles.refreshBtn} onPress={fetchTickets} disabled={loading}>
-            <RefreshCw size={14} color="#1E40AF" />
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity style={[styles.refreshBtn, { marginRight: 8 }]} onPress={fetchTickets} disabled={loading}>
+              <RefreshCw size={14} color="#1E40AF" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+              <Text style={styles.logoutBtnText}>Logout</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Filters Grid */}
@@ -275,7 +383,7 @@ export default function StaffDashboard() {
         {selectedTicket && (
           <SafeAreaView style={styles.modalContainer}>
             <View style={styles.modalHeader}>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.modalMetaText}>{selectedTicket.ticket_number} &bull; {selectedTicket.help_topic_name}</Text>
                 <Text style={styles.modalTitle} numberOfLines={1}>{selectedTicket.subject}</Text>
               </View>
@@ -421,12 +529,29 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#0F172A',
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   refreshBtn: {
     padding: 8,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     backgroundColor: '#FAFCFF',
+  },
+  logoutBtn: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  logoutBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
   },
   pickerRow: {
     flexDirection: 'row',
@@ -537,15 +662,10 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#0F172A',
   },
-  ticketVeh: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 2,
-    marginBottom: 10,
-  },
   badgeRow: {
     flexDirection: 'row',
     gap: 6,
+    marginTop: 10,
   },
   badge: {
     paddingHorizontal: 8,
@@ -586,7 +706,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     color: '#0F172A',
-    width: 250,
   },
   closeBtn: {
     padding: 6,
@@ -771,5 +890,103 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: {
     backgroundColor: '#CBD5E1',
+  },
+  loginContentContainer: {
+    flexGrow: 1,
+    padding: 20,
+    justifyContent: 'center',
+    backgroundColor: '#F8FAFC',
+  },
+  loginCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 24,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0F172A',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  loginIconWrapper: {
+    width: 56,
+    height: 56,
+    borderRadius: 14,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  loginTitle: {
+    fontSize: 20,
+    fontWeight: '850',
+    color: '#0F172A',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  loginSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    lineHeight: 16,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  fieldLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+    textTransform: 'uppercase',
+    marginBottom: 6,
+    marginTop: 10,
+  },
+  input: {
+    backgroundColor: '#FAFCFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === 'ios' ? 12 : 8,
+    fontSize: 14,
+    color: '#0F172A',
+    marginBottom: 16,
+  },
+  passwordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FAFCFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+    paddingRight: 12,
+  },
+  eyeBtn: {
+    padding: 6,
+  },
+  btn: {
+    height: 44,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnPrimary: {
+    backgroundColor: '#1E40AF',
+  },
+  btnPrimaryText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  btnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
 });
