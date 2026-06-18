@@ -77,8 +77,16 @@ export default function TrackTicket({ setView, trackCredentials, setTrackCredent
     const lookupEmail = (validEmail || email).trim();
     const lookupNum = (validNum || ticketNumber).trim();
 
-    if (!lookupEmail || !lookupNum) {
-      setError('Please enter both your email address and ticket reference number.');
+    if (!lookupEmail && !lookupNum) {
+      setError('Please enter both your email address and ticket reference code.');
+      return;
+    }
+    if (!lookupEmail) {
+      setError('Please enter your email address.');
+      return;
+    }
+    if (!lookupNum) {
+      setError('Please enter your ticket reference code.');
       return;
     }
 
