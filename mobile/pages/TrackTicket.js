@@ -203,90 +203,31 @@ export default function TrackTicket({ setView, trackCredentials, setTrackCredent
     }
   };
 
-  // VIEW 1: SECURITY VERIFICATION SCREEN
-  if (showVerification) {
-    return (
-      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-        <View style={styles.card}>
-          <TouchableOpacity style={styles.backLink} onPress={() => setShowVerification(false)}>
-            <ArrowLeft size={16} color="#1E40AF" />
-            <Text style={styles.backLinkText}>Back to Search</Text>
-          </TouchableOpacity>
-
-          <View style={styles.securityHeader}>
-            <ShieldAlert size={36} color="#1E40AF" />
-            <Text style={styles.title}>Identity Verification</Text>
-            <Text style={styles.subtitle}>Please complete the CAPTCHA and OTP verification below to access ticket details.</Text>
-          </View>
-
-          {verificationError ? (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{verificationError}</Text>
-            </View>
-          ) : null}
-
-          {/* CAPTCHA Challenge */}
-          <Text style={styles.fieldLabel}>Solve Captcha Challenge</Text>
-          <View style={styles.captchaRow}>
-            <View style={styles.captchaDisplay}>
-              <Text style={styles.captchaText}>{captchaChallenge}</Text>
-            </View>
-            <TouchableOpacity style={styles.refreshBtn} onPress={generateCaptchaAndOtp}>
-              <RefreshCw size={14} color="#64748B" />
-            </TouchableOpacity>
-            <TextInput
-              style={[styles.input, { flex: 1, marginBottom: 0 }]}
-              placeholder="Result"
-              placeholderTextColor="#94A3B8"
-              keyboardType="number-pad"
-              value={userCaptcha}
-              onChangeText={setUserCaptcha}
-            />
-          </View>
-
-          {/* OTP Code Input */}
-          <Text style={styles.fieldLabel}>One-Time Password (OTP)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter 6-digit OTP code"
-            placeholderTextColor="#94A3B8"
-            keyboardType="number-pad"
-            maxLength={6}
-            value={userOtp}
-            onChangeText={setUserOtp}
-          />
-
-          {/* Simulated Toast Delivery Notice */}
-          <View style={styles.demoOtpBox}>
-            <Key size={14} color="#1E40AF" />
-            <Text style={styles.demoOtpText}>
-              <Text style={{ fontWeight: '700' }}>SMS OTP Gateway:</Text> A simulated 6-digit OTP code of <Text style={{ fontWeight: '800', textDecorationLine: 'underline' }}>{otpText}</Text> was sent to your phone number: <Text style={{ fontWeight: '700' }}>{pendingTicket ? pendingTicket.phone : 'registered number'}</Text>.
-            </Text>
-          </View>
-
-          <TouchableOpacity style={[styles.btn, styles.btnPrimary]} onPress={handleVerifyAccess}>
-            <View style={styles.btnRow}>
-              <Lock size={16} color="#FFFFFF" />
-              <Text style={styles.btnPrimaryText}>Verify & Access Ticket</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    );
-  }
-
-  // VIEW 2: SEARCH LOOKUP SCREEN
+  // UNIFIED SEARCH & VERIFICATION VIEW
   if (!ticket) {
     return (
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
         <View style={styles.card}>
-          <TouchableOpacity style={styles.backLink} onPress={() => setView('home')}>
+          <TouchableOpacity style={styles.backLink} onPress={() => {
+            if (showVerification) {
+              setShowVerification(false);
+              setVerificationError('');
+            } else {
+              setView('home');
+            }
+          }}>
             <ArrowLeft size={16} color="#1E40AF" />
-            <Text style={styles.backLinkText}>Back to Dashboard</Text>
+            <Text style={styles.backLinkText}>
+              {showVerification ? 'Back to Search' : 'Back to Dashboard'}
+            </Text>
           </TouchableOpacity>
 
           <Text style={styles.title}>Track Ticket Status</Text>
-          <Text style={styles.subtitle}>Enter your logged email address and ticket reference code to inspect progress.</Text>
+          <Text style={styles.subtitle}>
+            {showVerification 
+              ? 'Complete the CAPTCHA and OTP challenge to verify your identity.'
+              : 'Enter your logged email address and ticket reference code to inspect progress.'}
+          </Text>
 
           {error ? (
             <View style={styles.errorBox}>
@@ -294,37 +235,103 @@ export default function TrackTicket({ setView, trackCredentials, setTrackCredent
             </View>
           ) : null}
 
+          {verificationError ? (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{verificationError}</Text>
+            </View>
+          ) : null}
+
           <Text style={styles.fieldLabel}>Your Email Address</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, showVerification && styles.disabledInput]}
             placeholder="customer@example.com"
             placeholderTextColor="#94A3B8"
             keyboardType="email-address"
             autoCapitalize="none"
             value={email}
             onChangeText={setEmail}
+            editable={!showVerification && !loading}
           />
 
           <Text style={styles.fieldLabel}>Ticket Reference Code</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, showVerification && styles.disabledInput]}
             placeholder="e.g. AL-123456"
             placeholderTextColor="#94A3B8"
             autoCapitalize="none"
             value={ticketNumber}
             onChangeText={setTicketNumber}
+            editable={!showVerification && !loading}
           />
 
-          <TouchableOpacity style={[styles.btn, styles.btnPrimary]} onPress={() => handleLookup(email, ticketNumber)} disabled={loading}>
-            {loading ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <View style={styles.btnRow}>
-                <Text style={styles.btnPrimaryText}>Lookup Ticket</Text>
-                <Search size={16} color="#FFFFFF" />
+          {showVerification ? (
+            <View style={styles.verificationSection}>
+              <View style={styles.dividerLine} />
+              
+              <Text style={styles.verificationHeading}>Identity Verification Required</Text>
+
+              {/* CAPTCHA Challenge */}
+              <Text style={styles.fieldLabel}>Solve Captcha Challenge</Text>
+              <View style={styles.captchaRow}>
+                <View style={styles.captchaDisplay}>
+                  <Text style={styles.captchaText}>{captchaChallenge}</Text>
+                </View>
+                <TouchableOpacity style={styles.refreshBtn} onPress={generateCaptchaAndOtp}>
+                  <RefreshCw size={14} color="#64748B" />
+                </TouchableOpacity>
+                <TextInput
+                  style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                  placeholder="Result"
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="number-pad"
+                  value={userCaptcha}
+                  onChangeText={setUserCaptcha}
+                />
               </View>
-            )}
-          </TouchableOpacity>
+
+              {/* OTP Code Input */}
+              <Text style={styles.fieldLabel}>One-Time Password (OTP)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter 6-digit OTP code"
+                placeholderTextColor="#94A3B8"
+                keyboardType="number-pad"
+                maxLength={6}
+                value={userOtp}
+                onChangeText={setUserOtp}
+              />
+
+              {/* Simulated Toast Delivery Notice */}
+              <View style={styles.demoOtpBox}>
+                <Key size={14} color="#1E40AF" />
+                <Text style={styles.demoOtpText}>
+                  <Text style={{ fontWeight: '700' }}>SMS OTP Gateway:</Text> A simulated 6-digit OTP code of <Text style={{ fontWeight: '800', textDecorationLine: 'underline' }}>{otpText}</Text> was sent to your phone number: <Text style={{ fontWeight: '700' }}>{pendingTicket ? pendingTicket.phone : 'registered number'}</Text>.
+                </Text>
+              </View>
+
+              <TouchableOpacity style={[styles.btn, styles.btnPrimary]} onPress={handleVerifyAccess}>
+                <View style={styles.btnRow}>
+                  <Lock size={16} color="#FFFFFF" />
+                  <Text style={styles.btnPrimaryText}>Verify & Access Ticket</Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={[styles.btn, styles.btnSecondary, { marginTop: 12 }]} onPress={() => { setShowVerification(false); setVerificationError(''); }}>
+                <Text style={styles.btnSecondaryText}>Change Ticket Info</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity style={[styles.btn, styles.btnPrimary]} onPress={() => handleLookup(email, ticketNumber)} disabled={loading}>
+              {loading ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <View style={styles.btnRow}>
+                  <Text style={styles.btnPrimaryText}>Request Verification OTP</Text>
+                  <Search size={16} color="#FFFFFF" />
+                </View>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
     );
@@ -558,6 +565,38 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#0F172A',
     marginBottom: 16,
+  },
+  disabledInput: {
+    backgroundColor: '#F1F5F9',
+    color: '#64748B',
+    borderColor: '#E2E8F0',
+  },
+  dividerLine: {
+    height: 1,
+    backgroundColor: '#E2E8F0',
+    marginVertical: 20,
+  },
+  verificationHeading: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#1E40AF',
+    marginBottom: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  btnSecondary: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    height: 44,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnSecondaryText: {
+    color: '#475569',
+    fontWeight: '700',
+    fontSize: 14,
   },
   btn: {
     height: 44,

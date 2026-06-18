@@ -18,6 +18,7 @@ import Home from './pages/Home';
 import SubmitTicket from './pages/SubmitTicket';
 import TrackTicket from './pages/TrackTicket';
 import StaffDashboard from './pages/StaffDashboard';
+import UserLogin from './pages/UserLogin';
 
 // Premium Fade & Slide Up Page Transition Wrapper
 function FadeInView({ children }) {
@@ -56,11 +57,24 @@ function FadeInView({ children }) {
 }
 
 export default function App() {
-  const [currentView, setView] = useState('home');
+  const [currentView, setView] = useState('user-login');
+  const [isUserAuthenticated, setIsUserAuthenticated] = useState(false);
   const [trackCredentials, setTrackCredentials] = useState(null);
   
   // Shared Staff Authentication state
   const [isStaffAuthenticated, setIsStaffAuthenticated] = useState(false);
+
+  const handleUserLoginSuccess = () => {
+    setIsUserAuthenticated(true);
+    setView('home');
+  };
+
+  const handleUserSignOut = () => {
+    setIsUserAuthenticated(false);
+    setIsStaffAuthenticated(false);
+    setTrackCredentials(null);
+    setView('user-login');
+  };
 
   const handleStaffSignOut = () => {
     setIsStaffAuthenticated(false);
@@ -71,6 +85,9 @@ export default function App() {
   const renderScreen = () => {
     let screen;
     switch (currentView) {
+      case 'user-login':
+        screen = <UserLogin onLoginSuccess={handleUserLoginSuccess} />;
+        break;
       case 'home':
         screen = <Home setView={setView} />;
         break;
@@ -101,7 +118,7 @@ export default function App() {
         );
         break;
       default:
-        screen = <Home setView={setView} />;
+        screen = isUserAuthenticated ? <Home setView={setView} /> : <UserLogin onLoginSuccess={handleUserLoginSuccess} />;
     }
 
     return (
@@ -119,19 +136,27 @@ export default function App() {
         <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
           {/* Web-Style Header Container */}
           <View style={styles.header}>
-            <TouchableOpacity style={styles.brandContainer} onPress={() => setView('home')}>
+            <TouchableOpacity style={styles.brandContainer} onPress={() => setView(isUserAuthenticated ? 'home' : 'user-login')}>
               <Text style={styles.brandTitle}>SUPPORT CENTER</Text>
               <Text style={styles.brandSubtitle}>Support Ticket System</Text>
             </TouchableOpacity>
 
             {/* Top Right: User Sign In/Sign Out Link */}
             <View style={styles.topRight}>
-              {isStaffAuthenticated ? (
+              {!isUserAuthenticated ? (
+                <View style={styles.topRightRow}>
+                  <Text style={styles.userNameText}>Sign In Required</Text>
+                </View>
+              ) : isStaffAuthenticated ? (
                 <View style={styles.topRightRow}>
                   <Text style={styles.userNameText}>Staff Operator</Text>
                   <Text style={styles.divider}>|</Text>
                   <TouchableOpacity onPress={handleStaffSignOut}>
-                    <Text style={styles.signInLink}>Sign Out</Text>
+                    <Text style={styles.signInLink}>Staff Sign Out</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.divider}>|</Text>
+                  <TouchableOpacity onPress={handleUserSignOut}>
+                    <Text style={styles.signInLink}>Portal Sign Out</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
@@ -139,7 +164,11 @@ export default function App() {
                   <Text style={styles.userNameText}>Guest User</Text>
                   <Text style={styles.divider}>|</Text>
                   <TouchableOpacity onPress={() => setView('staff-dashboard')}>
-                    <Text style={styles.signInLink}>Sign In</Text>
+                    <Text style={styles.signInLink}>Staff Sign In</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.divider}>|</Text>
+                  <TouchableOpacity onPress={handleUserSignOut}>
+                    <Text style={styles.signInLink}>Sign Out</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -147,49 +176,51 @@ export default function App() {
           </View>
 
           {/* Web-Style Horizontal Navigation Bar */}
-          <View style={styles.navigationBar}>
-            <TouchableOpacity 
-              style={[styles.navTab, currentView === 'home' && styles.navTabActive]} 
-              onPress={() => setView('home')}
-            >
-              <HomeIcon size={14} color={currentView === 'home' ? '#2563EB' : '#475569'} style={styles.navIcon} />
-              <Text style={[styles.navLabel, currentView === 'home' && styles.navLabelActive]}>
-                Support Center Home
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={[styles.navTab, currentView === 'submit-ticket' && styles.navTabActive]} 
-              onPress={() => setView('submit-ticket')}
-            >
-              <FileText size={14} color={currentView === 'submit-ticket' ? '#2563EB' : '#475569'} style={styles.navIcon} />
-              <Text style={[styles.navLabel, currentView === 'submit-ticket' && styles.navLabelActive]}>
-                Open a New Ticket
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={[styles.navTab, currentView === 'track-ticket' && styles.navTabActive]} 
-              onPress={() => setView('track-ticket')}
-            >
-              <Search size={14} color={currentView === 'track-ticket' ? '#2563EB' : '#475569'} style={styles.navIcon} />
-              <Text style={[styles.navLabel, currentView === 'track-ticket' && styles.navLabelActive]}>
-                Check Ticket Status
-              </Text>
-            </TouchableOpacity>
-
-            {isStaffAuthenticated && (
+          {isUserAuthenticated && (
+            <View style={styles.navigationBar}>
               <TouchableOpacity 
-                style={[styles.navTab, currentView === 'staff-dashboard' && styles.navTabActive]} 
-                onPress={() => setView('staff-dashboard')}
+                style={[styles.navTab, currentView === 'home' && styles.navTabActive]} 
+                onPress={() => setView('home')}
               >
-                <ShieldAlert size={14} color={currentView === 'staff-dashboard' ? '#2563EB' : '#475569'} style={styles.navIcon} />
-                <Text style={[styles.navLabel, currentView === 'staff-dashboard' && styles.navLabelActive]}>
-                  Ticket List (Staff Panel)
+                <HomeIcon size={14} color={currentView === 'home' ? '#2563EB' : '#475569'} style={styles.navIcon} />
+                <Text style={[styles.navLabel, currentView === 'home' && styles.navLabelActive]}>
+                  Support Center Home
                 </Text>
               </TouchableOpacity>
-            )}
-          </View>
+
+              <TouchableOpacity 
+                style={[styles.navTab, currentView === 'submit-ticket' && styles.navTabActive]} 
+                onPress={() => setView('submit-ticket')}
+              >
+                <FileText size={14} color={currentView === 'submit-ticket' ? '#2563EB' : '#475569'} style={styles.navIcon} />
+                <Text style={[styles.navLabel, currentView === 'submit-ticket' && styles.navLabelActive]}>
+                  Open a New Ticket
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.navTab, currentView === 'track-ticket' && styles.navTabActive]} 
+                onPress={() => setView('track-ticket')}
+              >
+                <Search size={14} color={currentView === 'track-ticket' ? '#2563EB' : '#475569'} style={styles.navIcon} />
+                <Text style={[styles.navLabel, currentView === 'track-ticket' && styles.navLabelActive]}>
+                  Check Ticket Status
+                </Text>
+              </TouchableOpacity>
+
+              {isStaffAuthenticated && (
+                <TouchableOpacity 
+                  style={[styles.navTab, currentView === 'staff-dashboard' && styles.navTabActive]} 
+                  onPress={() => setView('staff-dashboard')}
+                >
+                  <ShieldAlert size={14} color={currentView === 'staff-dashboard' ? '#2563EB' : '#475569'} style={styles.navIcon} />
+                  <Text style={[styles.navLabel, currentView === 'staff-dashboard' && styles.navLabelActive]}>
+                    Ticket List (Staff Panel)
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
 
           {/* Main Viewport */}
           <View style={styles.mainContainer}>
