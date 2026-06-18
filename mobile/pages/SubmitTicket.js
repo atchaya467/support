@@ -15,7 +15,7 @@ import { Picker } from '@react-native-picker/picker';
 import { CheckCircle, Info } from 'lucide-react-native';
 import { API_BASE_URL, fetchWithTimeout } from '../config';
 
-export default function SubmitTicket({ setView, setTrackCredentials }) {
+export default function SubmitTicket({ setView, setTrackCredentials, userEmail }) {
   const [helpTopics, setHelpTopics] = useState([]);
   const [loading, setLoading] = useState(false);
   const [fetchingTopics, setFetchingTopics] = useState(true);
@@ -23,7 +23,7 @@ export default function SubmitTicket({ setView, setTrackCredentials }) {
   
   const initialFormState = {
     name: '',
-    email: '',
+    email: userEmail || '',
     phone: '',
     help_topic_id: ''
   };
@@ -33,6 +33,12 @@ export default function SubmitTicket({ setView, setTrackCredentials }) {
   
   const scaleAnim = useRef(new Animated.Value(0.85)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (userEmail) {
+      setFormData(prev => ({ ...prev, email: userEmail }));
+    }
+  }, [userEmail]);
 
   useEffect(() => {
     if (createdTicket) {
@@ -216,13 +222,14 @@ export default function SubmitTicket({ setView, setTrackCredentials }) {
               
               <Text style={styles.fieldLabel}>Email Address <Text style={styles.required}>*</Text></Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, !!userEmail && styles.disabledInput]}
                 placeholder="customer@example.com"
                 placeholderTextColor="#94A3B8"
                 keyboardType="email-address"
                 autoCapitalize="none"
                 value={formData.email}
                 onChangeText={(val) => handleChange('email', val)}
+                editable={!userEmail}
               />
 
               <Text style={styles.fieldLabel}>Full Name <Text style={styles.required}>*</Text></Text>
@@ -400,6 +407,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#0F172A',
     marginBottom: 12,
+  },
+  disabledInput: {
+    backgroundColor: '#F1F5F9',
+    color: '#64748B',
+    borderColor: '#E2E8F0',
   },
   pickerContainer: {
     backgroundColor: '#FAFCFF',

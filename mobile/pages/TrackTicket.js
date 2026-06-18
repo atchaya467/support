@@ -14,9 +14,9 @@ import {
 import { Search, ArrowLeft, RefreshCw, FileText, User, Calendar, MessageSquare, Send, ShieldAlert, Key, Lock } from 'lucide-react-native';
 import { API_BASE_URL, fetchWithTimeout } from '../config';
 
-export default function TrackTicket({ setView, trackCredentials, setTrackCredentials }) {
+export default function TrackTicket({ setView, trackCredentials, setTrackCredentials, userEmail }) {
   // Authentication lookup state
-  const [email, setEmail] = useState(trackCredentials?.email || '');
+  const [email, setEmail] = useState(trackCredentials?.email || userEmail || '');
   const [ticketNumber, setTicketNumber] = useState(trackCredentials?.ticketNumber || '');
   
   // App states
@@ -46,6 +46,13 @@ export default function TrackTicket({ setView, trackCredentials, setTrackCredent
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Sync userEmail
+  useEffect(() => {
+    if (userEmail) {
+      setEmail(userEmail);
+    }
+  }, [userEmail]);
 
   const generateCaptchaAndOtp = () => {
     const val1 = Math.floor(Math.random() * 10) + 1;
@@ -243,14 +250,14 @@ export default function TrackTicket({ setView, trackCredentials, setTrackCredent
 
           <Text style={styles.fieldLabel}>Your Email Address</Text>
           <TextInput
-            style={[styles.input, showVerification && styles.disabledInput]}
+            style={[styles.input, (showVerification || !!userEmail) && styles.disabledInput]}
             placeholder="customer@example.com"
             placeholderTextColor="#94A3B8"
             keyboardType="email-address"
             autoCapitalize="none"
             value={email}
             onChangeText={setEmail}
-            editable={!showVerification && !loading}
+            editable={!showVerification && !userEmail && !loading}
           />
 
           <Text style={styles.fieldLabel}>Ticket Reference Code</Text>

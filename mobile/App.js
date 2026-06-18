@@ -59,19 +59,22 @@ function FadeInView({ children }) {
 export default function App() {
   const [currentView, setView] = useState('user-login');
   const [isUserAuthenticated, setIsUserAuthenticated] = useState(false);
+  const [userEmail, setUserEmail] = useState('');
   const [trackCredentials, setTrackCredentials] = useState(null);
   
   // Shared Staff Authentication state
   const [isStaffAuthenticated, setIsStaffAuthenticated] = useState(false);
 
-  const handleUserLoginSuccess = () => {
+  const handleUserLoginSuccess = (email) => {
     setIsUserAuthenticated(true);
+    setUserEmail(email);
     setView('home');
   };
 
   const handleUserSignOut = () => {
     setIsUserAuthenticated(false);
     setIsStaffAuthenticated(false);
+    setUserEmail('');
     setTrackCredentials(null);
     setView('user-login');
   };
@@ -96,6 +99,7 @@ export default function App() {
           <SubmitTicket 
             setView={setView} 
             setTrackCredentials={setTrackCredentials} 
+            userEmail={userEmail}
           />
         );
         break;
@@ -105,6 +109,7 @@ export default function App() {
             setView={setView} 
             trackCredentials={trackCredentials}
             setTrackCredentials={setTrackCredentials}
+            userEmail={userEmail}
           />
         );
         break;

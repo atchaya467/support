@@ -37,7 +37,7 @@ export default function UserLogin({ onLoginSuccess }) {
     // Simulate API Login check (Allow any email and password for demo convenience)
     setTimeout(() => {
       setLoading(false);
-      onLoginSuccess();
+      onLoginSuccess(trimmedEmail);
     }, 800);
   };
 
