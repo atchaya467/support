@@ -42,9 +42,9 @@ try {
   const mockTickets = [];
   const mockReplies = [];
   const mockUsers = [
-    { id: 1, email: 'admin@example.com', password: 'admin123', created_at: new Date().toISOString() },
-    { id: 2, email: 'user@example.com', password: 'user123', created_at: new Date().toISOString() },
-    { id: 3, email: 'demo@example.com', password: 'demo123', created_at: new Date().toISOString() },
+    { id: 1, email: 'admin@example.com', password: 'admin123', two_factor_secret: null, two_factor_enabled: 0, created_at: new Date().toISOString() },
+    { id: 2, email: 'user@example.com', password: 'user123', two_factor_secret: null, two_factor_enabled: 0, created_at: new Date().toISOString() },
+    { id: 3, email: 'demo@example.com', password: 'demo123', two_factor_secret: null, two_factor_enabled: 0, created_at: new Date().toISOString() },
   ];
   
   dbObject = {
@@ -52,13 +52,50 @@ try {
     query: async (sql, params = []) => {
       console.log('Mock DB Query:', sql, 'Params:', params);
 
-      // 0. User Login Query
+      // 0. User Login Query (Email + Password or Email only)
       if (sql.includes('SELECT * FROM users WHERE')) {
-        const [emailParam, passwordParam] = params;
-        const found = mockUsers.filter(
-          u => u.email.toLowerCase() === emailParam.toLowerCase() && u.password === passwordParam
+        if (sql.includes('password = ?')) {
+          const [emailParam, passwordParam] = params;
+          const found = mockUsers.filter(
+            u => u.email.toLowerCase() === emailParam.toLowerCase() && u.password === passwordParam
+          );
+          return [found];
+        } else {
+          const [emailParam] = params;
+          const found = mockUsers.filter(
+            u => u.email.toLowerCase() === emailParam.toLowerCase()
+          );
+          return [found];
+        }
+      }
+
+      // User Update Query (Enable / Update Two Factor)
+      if (sql.includes('UPDATE users SET two_factor_secret = ?')) {
+        const [secretParam, enabledParam, emailParam] = params;
+        const userObj = mockUsers.find(
+          u => u.email.toLowerCase() === emailParam.toLowerCase()
         );
-        return [found];
+        if (userObj) {
+          userObj.two_factor_secret = secretParam;
+          userObj.two_factor_enabled = enabledParam;
+          return [{ affectedRows: 1 }];
+        }
+        return [{ affectedRows: 0 }];
+      }
+
+      // User Insert Query (Register)
+      if (sql.includes('INSERT INTO users')) {
+        const [emailParam, passwordParam] = params;
+        const newUser = {
+          id: mockUsers.length + 1,
+          email: emailParam,
+          password: passwordParam,
+          two_factor_secret: null,
+          two_factor_enabled: 0,
+          created_at: new Date().toISOString()
+        };
+        mockUsers.push(newUser);
+        return [{ insertId: newUser.id }];
       }
 
       // 1. Get Help Topics

@@ -8,12 +8,15 @@ import {
   ScrollView,
   ActivityIndicator,
   Platform,
+  Image,
 } from 'react-native';
 import {
   Lock,
   Mail,
   ArrowRight,
   Smartphone,
+  QrCode,
+  ShieldCheck,
 } from 'lucide-react-native';
 import { API_BASE_URL, fetchWithTimeout } from '../config';
 
@@ -23,10 +26,15 @@ export default function UserLogin({ onLoginSuccess }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // OTP verification step
-  const [showOtpStep, setShowOtpStep] = useState(false);
-  const [generatedOtp, setGeneratedOtp] = useState('');
-  const [userOtp, setUserOtp] = useState('');
+  // Sign In vs Sign Up toggle
+  const [isRegistering, setIsRegistering] = useState(false);
+
+  // 2FA verification step state
+  const [showMfaStep, setShowMfaStep] = useState(false);
+  const [isMfaSetup, setIsMfaSetup] = useState(false);
+  const [mfaQrCodeUrl, setMfaQrCodeUrl] = useState('');
+  const [mfaSecret, setMfaSecret] = useState('');
+  const [mfaToken, setMfaToken] = useState('');
 
   const handleLogin = async () => {
     setError('');
@@ -61,9 +69,15 @@ export default function UserLogin({ onLoginSuccess }) {
         return;
       }
 
-      // Server returns OTP for demo display
-      setGeneratedOtp(data.otp || '');
-      setShowOtpStep(true);
+      if (data.mfaRequired) {
+        setIsMfaSetup(data.mfaSetup || false);
+        setMfaQrCodeUrl(data.qrCodeUrl || '');
+        setMfaSecret(data.secret || '');
+        setMfaToken('');
+        setShowMfaStep(true);
+      } else {
+        onLoginSuccess(trimmedEmail);
+      }
       setLoading(false);
     } catch (err) {
       setError(err.message || 'Could not connect to server.');
@@ -71,32 +85,94 @@ export default function UserLogin({ onLoginSuccess }) {
     }
   };
 
-  const handleVerifyOtp = async () => {
+  const handleRegister = async () => {
     setError('');
 
-    if (!userOtp.trim()) {
-      setError('Please enter the OTP code sent to your email.');
+    const trimmedEmail = email.trim();
+    const trimmedPassword = password.trim();
+
+    if (!trimmedEmail || !trimmedPassword) {
+      setError('Please fill in both Email Address and Password.');
+      return;
+    }
+
+    if (!/\S+@\S+\.\S+/.test(trimmedEmail)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+
+    if (trimmedPassword.length < 6) {
+      setError('Password must be at least 6 characters long.');
       return;
     }
 
     setLoading(true);
 
     try {
-      const response = await fetchWithTimeout(`${API_BASE_URL}/api/verify-otp`, {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/api/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), otp: userOtp.trim() }),
+        body: JSON.stringify({ email: trimmedEmail, password: trimmedPassword }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        setError(data.error || 'OTP verification failed.');
+        setError(data.error || 'Registration failed. Please try again.');
         setLoading(false);
         return;
       }
 
-      // OTP verified — proceed to next page
+      if (data.mfaRequired) {
+        setIsMfaSetup(data.mfaSetup || false);
+        setMfaQrCodeUrl(data.qrCodeUrl || '');
+        setMfaSecret(data.secret || '');
+        setMfaToken('');
+        setShowMfaStep(true);
+      } else {
+        onLoginSuccess(trimmedEmail);
+      }
+      setLoading(false);
+    } catch (err) {
+      setError(err.message || 'Could not connect to server.');
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyMfa = async () => {
+    setError('');
+
+    if (!mfaToken.trim()) {
+      setError('Please enter the 6-digit Google Authenticator code.');
+      return;
+    }
+
+    if (mfaToken.trim().length !== 6) {
+      setError('Code must be exactly 6 digits.');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/api/verify-2fa`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email.trim(),
+          token: mfaToken.trim(),
+          isSetup: isMfaSetup,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.error || 'Verification failed.');
+        setLoading(false);
+        return;
+      }
+
       setLoading(false);
       onLoginSuccess(email.trim());
     } catch (err) {
@@ -105,38 +181,12 @@ export default function UserLogin({ onLoginSuccess }) {
     }
   };
 
-  const handleResendOtp = async () => {
-    setError('');
-    setUserOtp('');
-    setLoading(true);
-
-    try {
-      const response = await fetchWithTimeout(`${API_BASE_URL}/api/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), password: password.trim() }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error || 'Failed to resend OTP.');
-        setLoading(false);
-        return;
-      }
-
-      setGeneratedOtp(data.otp || '');
-      setLoading(false);
-    } catch (err) {
-      setError(err.message || 'Could not connect to server.');
-      setLoading(false);
-    }
-  };
-
   const handleBackToLogin = () => {
-    setShowOtpStep(false);
-    setGeneratedOtp('');
-    setUserOtp('');
+    setShowMfaStep(false);
+    setIsMfaSetup(false);
+    setMfaQrCodeUrl('');
+    setMfaSecret('');
+    setMfaToken('');
     setError('');
   };
 
@@ -148,16 +198,30 @@ export default function UserLogin({ onLoginSuccess }) {
       <View style={styles.card}>
         <View style={styles.headerContainer}>
           <View style={styles.iconContainer}>
-            <Lock size={24} color="#1E40AF" />
+            {showMfaStep ? (
+              <ShieldCheck size={24} color="#1E40AF" />
+            ) : (
+              <Lock size={24} color="#1E40AF" />
+            )}
           </View>
 
           <Text style={styles.title}>
-            {showOtpStep ? 'Verify OTP' : 'Sign In'}
+            {showMfaStep
+              ? isMfaSetup
+                ? 'Setup Authenticator'
+                : '2FA Verification'
+              : isRegistering
+              ? 'Create Account'
+              : 'Sign In'}
           </Text>
 
           <Text style={styles.subtitle}>
-            {showOtpStep
-              ? 'A 6-digit verification code has been sent to your email address. Please enter it below to continue.'
+            {showMfaStep
+              ? isMfaSetup
+                ? 'Scan the QR code with Google Authenticator or enter the manual key below, then input the 6-digit code.'
+                : 'Enter the 6-digit verification code from Google Authenticator to secure your session.'
+              : isRegistering
+              ? 'Register a new support ticket portal account. Google Authenticator 2FA setup will start immediately.'
               : 'Access the Forte Support Ticket Portal to open requests and track active progress.'}
           </Text>
         </View>
@@ -169,7 +233,7 @@ export default function UserLogin({ onLoginSuccess }) {
         ) : null}
 
         {/* === STEP 1: Email + Password === */}
-        {!showOtpStep && (
+        {!showMfaStep && (
           <>
             {/* Email */}
             <Text style={styles.fieldLabel}>Email Address</Text>
@@ -214,20 +278,28 @@ export default function UserLogin({ onLoginSuccess }) {
               />
             </View>
 
-            {/* Demo Notice */}
-            <View style={styles.demoNoticeBox}>
-              <Text style={styles.demoNoticeText}>
-                <Text style={{ fontWeight: '700' }}>
-                  Demo Accounts:
-                </Text>{' '}
-                admin@example.com / admin123, user@example.com / user123, demo@example.com / demo123
-              </Text>
-            </View>
+            {/* Demo Notice (Only visible when signing in) */}
+            {!isRegistering ? (
+              <View style={styles.demoNoticeBox}>
+                <Text style={styles.demoNoticeText}>
+                  <Text style={{ fontWeight: '700' }}>
+                    Demo Accounts:
+                  </Text>{' '}
+                  admin@example.com / admin123, user@example.com / user123, demo@example.com / demo123
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.registerNoticeBox}>
+                <Text style={styles.registerNoticeText}>
+                  <Text style={{ fontWeight: '700' }}>Security Note:</Text> Accounts created are stored in the database. Google Authenticator 2FA will be initialized right after registration.
+                </Text>
+              </View>
+            )}
 
-            {/* Sign In Button */}
+            {/* Sign In / Register Button */}
             <TouchableOpacity
               style={[styles.btn, styles.btnPrimary]}
-              onPress={handleLogin}
+              onPress={isRegistering ? handleRegister : handleLogin}
               disabled={loading}
             >
               {loading ? (
@@ -238,7 +310,7 @@ export default function UserLogin({ onLoginSuccess }) {
               ) : (
                 <View style={styles.btnRow}>
                   <Text style={styles.btnPrimaryText}>
-                    Sign In to Portal
+                    {isRegistering ? 'Register & Setup 2FA' : 'Sign In to Portal'}
                   </Text>
 
                   <ArrowRight
@@ -248,17 +320,55 @@ export default function UserLogin({ onLoginSuccess }) {
                 </View>
               )}
             </TouchableOpacity>
+
+            {/* Toggle Link to switch views */}
+            <View style={styles.toggleRow}>
+              <Text style={styles.toggleText}>
+                {isRegistering ? 'Already have an account? ' : "Don't have an account? "}
+              </Text>
+              <TouchableOpacity onPress={() => { setIsRegistering(!isRegistering); setError(''); }}>
+                <Text style={styles.toggleLink}>
+                  {isRegistering ? 'Sign In' : 'Sign Up'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </>
         )}
 
-        {/* === STEP 2: OTP Verification === */}
-        {showOtpStep && (
+        {/* === STEP 2: Google Authenticator 2FA Setup/Verification === */}
+        {showMfaStep && (
           <>
-            {/* OTP Input */}
-            <Text style={styles.fieldLabel}>One-Time Password (OTP)</Text>
+            {isMfaSetup && (
+              <View style={styles.mfaSetupContainer}>
+                {/* QR Code Container */}
+                {mfaQrCodeUrl ? (
+                  <View style={styles.qrContainer}>
+                    <Image
+                      source={{ uri: mfaQrCodeUrl }}
+                      style={styles.qrCodeImage}
+                      resizeMode="contain"
+                    />
+                  </View>
+                ) : null}
+
+                {/* Secret Key manual text */}
+                <View style={styles.secretBox}>
+                  <Text style={styles.secretLabel}>Manual Secret Key</Text>
+                  <Text style={styles.secretText} selectable={true}>
+                    {mfaSecret}
+                  </Text>
+                  <Text style={styles.secretHelp}>
+                    If you cannot scan, manually add this key to your app.
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Token Input */}
+            <Text style={styles.fieldLabel}>Authenticator Code (6-digit)</Text>
 
             <View style={styles.inputContainer}>
-              <Smartphone
+              <QrCode
                 size={16}
                 color="#64748B"
                 style={styles.inputIcon}
@@ -266,44 +376,27 @@ export default function UserLogin({ onLoginSuccess }) {
 
               <TextInput
                 style={styles.input}
-                placeholder="Enter 6-digit OTP code"
+                placeholder="000000"
                 placeholderTextColor="#94A3B8"
                 keyboardType="number-pad"
                 maxLength={6}
-                value={userOtp}
-                onChangeText={setUserOtp}
+                value={mfaToken}
+                onChangeText={setMfaToken}
                 editable={!loading}
               />
             </View>
 
-            {/* Simulated OTP Display */}
-            <View style={styles.otpDisplayBox}>
-              <Text style={styles.otpDisplayText}>
-                <Text style={{ fontWeight: '700' }}>OTP Gateway:</Text>{' '}
-                A simulated 6-digit OTP code of{' '}
-                <Text style={{ fontWeight: '800', textDecorationLine: 'underline' }}>
-                  {generatedOtp}
-                </Text>{' '}
-                was sent to your email:{' '}
-                <Text style={{ fontWeight: '700' }}>{email.trim()}</Text>.
-              </Text>
-            </View>
-
-            {/* Resend & Back links */}
+            {/* Back link */}
             <View style={styles.linkRow}>
               <TouchableOpacity onPress={handleBackToLogin}>
                 <Text style={styles.linkText}>← Back to Sign In</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity onPress={handleResendOtp} disabled={loading}>
-                <Text style={styles.linkText}>Resend OTP</Text>
               </TouchableOpacity>
             </View>
 
             {/* Verify Button */}
             <TouchableOpacity
               style={[styles.btn, styles.btnPrimary]}
-              onPress={handleVerifyOtp}
+              onPress={handleVerifyMfa}
               disabled={loading}
             >
               {loading ? (
@@ -311,7 +404,7 @@ export default function UserLogin({ onLoginSuccess }) {
               ) : (
                 <View style={styles.btnRow}>
                   <Text style={styles.btnPrimaryText}>
-                    Verify & Sign In
+                    {isMfaSetup ? 'Verify & Activate 2FA' : 'Verify & Sign In'}
                   </Text>
                   <ArrowRight size={16} color="#FFFFFF" />
                 </View>
@@ -450,19 +543,73 @@ const styles = StyleSheet.create({
     lineHeight: 15,
   },
 
-  otpDisplayBox: {
+  registerNoticeBox: {
     backgroundColor: '#F0FDF4',
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#BBF7D0',
     padding: 10,
-    marginBottom: 12,
+    marginBottom: 20,
   },
 
-  otpDisplayText: {
+  registerNoticeText: {
     fontSize: 11,
     color: '#166534',
-    lineHeight: 16,
+    lineHeight: 15,
+  },
+
+  mfaSetupContainer: {
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 16,
+  },
+
+  qrContainer: {
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    marginBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  qrCodeImage: {
+    width: 180,
+    height: 180,
+  },
+
+  secretBox: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    padding: 12,
+    width: '100%',
+    alignItems: 'center',
+  },
+
+  secretLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+
+  secretText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: 1.5,
+  },
+
+  secretHelp: {
+    fontSize: 10,
+    color: '#94A3B8',
+    marginTop: 6,
+    textAlign: 'center',
   },
 
   linkRow: {
@@ -501,5 +648,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+
+  toggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 16,
+  },
+
+  toggleText: {
+    fontSize: 13,
+    color: '#64748B',
+  },
+
+  toggleLink: {
+    fontSize: 13,
+    color: '#1E40AF',
+    fontWeight: '700',
+    textDecorationLine: 'underline',
   },
 });
