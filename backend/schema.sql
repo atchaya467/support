@@ -37,8 +37,6 @@ CREATE TABLE tickets (
     email VARCHAR(255) NOT NULL,
     phone VARCHAR(50) NOT NULL,
     help_topic_id INT NOT NULL,
-    subject VARCHAR(255) NOT NULL,
-    description TEXT NOT NULL,
     priority VARCHAR(50) DEFAULT 'Low',
     status VARCHAR(50) DEFAULT 'Open',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

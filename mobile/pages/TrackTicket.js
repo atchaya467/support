@@ -398,12 +398,7 @@ export default function TrackTicket({ setView, trackCredentials, setTrackCredent
             </View>
           </View>
 
-          <Text style={styles.ticketSubject}>{ticket.subject}</Text>
-          
-          <View style={styles.descRow}>
-            <FileText size={16} color="#64748B" style={styles.descIcon} />
-            <Text style={styles.descText}>{ticket.description}</Text>
-          </View>
+          <Text style={styles.ticketSubject}>{ticket.help_topic_name || 'Support Ticket'}</Text>
 
           <View style={styles.detailsBox}>
             <View style={styles.detailsColumn}>

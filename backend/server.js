@@ -148,18 +148,38 @@ app.post('/api/login', async (req, res) => {
     return res.status(400).json({ error: 'Email and password are required.' });
   }
 
+  const trimmedEmail = email.trim();
+  const trimmedPassword = password.trim();
+
   try {
-    const [users] = await db.query(
-      'SELECT * FROM users WHERE LOWER(email) = LOWER(?) AND password = ?',
-      [email.trim(), password.trim()]
+    // 1. Fetch user by email to check if they exist
+    let [users] = await db.query(
+      'SELECT * FROM users WHERE LOWER(email) = LOWER(?)',
+      [trimmedEmail]
     );
 
+    let user;
     if (users.length === 0) {
-      return res.status(401).json({ error: 'Invalid email or password.' });
+      // 2. If user does not exist, automatically register/store in database
+      await db.query(
+        'INSERT INTO users (email, password) VALUES (?, ?)',
+        [trimmedEmail, trimmedPassword]
+      );
+      // Fetch the newly created user record
+      const [newUsers] = await db.query(
+        'SELECT * FROM users WHERE LOWER(email) = LOWER(?)',
+        [trimmedEmail]
+      );
+      user = newUsers[0];
+    } else {
+      // 3. User exists: verify password
+      user = users[0];
+      if (user.password !== trimmedPassword) {
+        return res.status(401).json({ error: 'Invalid email or password.' });
+      }
     }
 
-    const user = users[0];
-    const emailKey = email.trim().toLowerCase();
+    const emailKey = trimmedEmail.toLowerCase();
 
     // Check if user has 2FA enabled
     const twoFactorEnabled = user.two_factor_enabled === 1 || user.two_factor_enabled === true;
@@ -287,14 +307,12 @@ app.post('/api/tickets', async (req, res) => {
     email,
     phone,
     help_topic_id,
-    subject,
-    description,
     priority
   } = req.body;
 
   // Simple validation
-  if (!name || !email || !phone || !help_topic_id || !subject || !description) {
-    return res.status(400).json({ error: 'All fields are required' });
+  if (!name || !email || !phone || !help_topic_id) {
+    return res.status(400).json({ error: 'Name, email, phone and help topic are required' });
   }
 
   try {
@@ -303,9 +321,9 @@ app.post('/api/tickets', async (req, res) => {
 
     const [result] = await db.query(
       `INSERT INTO tickets 
-        (ticket_number, name, email, phone, help_topic_id, subject, description, priority, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Open')`,
-      [ticketNumber, name, email, phone, help_topic_id, subject, description, finalPriority]
+        (ticket_number, name, email, phone, help_topic_id, priority, status)
+       VALUES (?, ?, ?, ?, ?, ?, 'Open')`,
+      [ticketNumber, name, email, phone, help_topic_id, finalPriority]
     );
 
     res.status(201).json({
@@ -402,7 +420,7 @@ app.post('/api/tickets/:id/replies', async (req, res) => {
 
 // 6. Staff Dashboard: List all tickets with filtering and search
 app.get('/api/staff/tickets', async (req, res) => {
-  const { status, priority, search } = req.query;
+  const { status, priority, search, email } = req.query;
 
   let query = `
     SELECT t.*, ht.name AS help_topic_name
@@ -411,6 +429,11 @@ app.get('/api/staff/tickets', async (req, res) => {
     WHERE 1=1
   `;
   const queryParams = [];
+
+  if (email) {
+    query += ' AND LOWER(t.email) = LOWER(?)';
+    queryParams.push(email);
+  }
 
   if (status) {
     query += ' AND t.status = ?';
@@ -423,9 +446,9 @@ app.get('/api/staff/tickets', async (req, res) => {
   }
 
   if (search) {
-    query += ' AND (t.ticket_number LIKE ? OR t.name LIKE ? OR t.email LIKE ? OR t.subject LIKE ?)';
+    query += ' AND (t.ticket_number LIKE ? OR t.name LIKE ? OR t.email LIKE ?)';
     const searchVal = `%${search}%`;
-    queryParams.push(searchVal, searchVal, searchVal, searchVal);
+    queryParams.push(searchVal, searchVal, searchVal);
   }
 
   query += ' ORDER BY t.created_at DESC';
@@ -467,6 +490,6 @@ app.put('/api/staff/tickets/:id/status', async (req, res) => {
 });
 
 // Start Express Server
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT} (accessible on all network interfaces)`);
 });

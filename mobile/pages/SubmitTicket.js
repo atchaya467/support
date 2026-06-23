@@ -1,31 +1,35 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  StyleSheet, 
-  View, 
-  Text, 
-  TextInput, 
-  ScrollView, 
-  TouchableOpacity, 
-  ActivityIndicator, 
-  KeyboardAvoidingView, 
+import {
+  StyleSheet,
+  View,
+  Text,
+  TextInput,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  KeyboardAvoidingView,
   Platform,
-  Animated
+  Animated,
+  useWindowDimensions,
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
-import { CheckCircle, Info } from 'lucide-react-native';
+import { CheckCircle, ChevronLeft, Send } from 'lucide-react-native';
 import { API_BASE_URL, fetchWithTimeout } from '../config';
 
-export default function SubmitTicket({ setView, setTrackCredentials, userEmail }) {
+export default function SubmitTicket({ setView, setTrackCredentials, userEmail, userName, userPhone }) {
+  const { width } = useWindowDimensions();
+  const isWide = width >= 640;
   const [helpTopics, setHelpTopics] = useState([]);
   const [loading, setLoading] = useState(false);
   const [fetchingTopics, setFetchingTopics] = useState(true);
   const [error, setError] = useState('');
   
   const initialFormState = {
-    name: '',
+    name: userName || '',
     email: userEmail || '',
-    phone: '',
-    help_topic_id: ''
+    phone: userPhone || '',
+    help_topic_id: '',
+    priority: 'Normal',
   };
 
   const [formData, setFormData] = useState(initialFormState);
@@ -35,10 +39,13 @@ export default function SubmitTicket({ setView, setTrackCredentials, userEmail }
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (userEmail) {
-      setFormData(prev => ({ ...prev, email: userEmail }));
-    }
-  }, [userEmail]);
+    setFormData(prev => ({ 
+      ...prev, 
+      email: userEmail || prev.email,
+      name: userName || prev.name,
+      phone: userPhone || prev.phone
+    }));
+  }, [userEmail, userName, userPhone]);
 
   useEffect(() => {
     if (createdTicket) {
@@ -83,43 +90,30 @@ export default function SubmitTicket({ setView, setTrackCredentials, userEmail }
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleReset = () => {
-    setFormData(initialFormState);
-    if (helpTopics.length > 0) {
-      setFormData(prev => ({ ...prev, help_topic_id: helpTopics[0].id.toString() }));
-    }
-    setError('');
-  };
-
   const handleCancel = () => {
-    setView('home');
+    setView('user-dashboard');
   };
 
   const handleSubmit = async () => {
     setError('');
 
-    // Native validation checks (only for the 4 fields)
-    if (!formData.email.trim()) return setError('Email Address is required.');
-    if (!/\S+@\S+\.\S+/.test(formData.email)) return setError('Please enter a valid email address.');
     if (!formData.name.trim()) return setError('Full Name is required.');
-    if (!formData.phone.trim()) return setError('Phone Number is required.');
-    if (!formData.help_topic_id) return setError('Help Topic is required.');
+    if (!formData.email.trim()) return setError('Email Address is required.');
+    const emailPattern = new RegExp('^\\S+@\\S+\\.\\S+$');
+    if (!emailPattern.test(formData.email)) return setError('Please enter a valid email address.');
+
+    const phoneDigits = (formData.phone || '').replace(/[^0-9]/g, '');
+    if (phoneDigits.length !== 10) return setError('Phone Number must contain exactly 10 digits, no letters.');
+    if (phoneDigits !== (formData.phone || '')) return setError('Phone Number must contain exactly 10 digits, no letters.');
 
     setLoading(true);
 
-    // Get the name of the selected topic for default subject/desc
-    const selectedTopic = helpTopics.find(t => t.id.toString() === formData.help_topic_id);
-    const topicName = selectedTopic ? selectedTopic.name : 'General Inquiry';
-
-    // Build payload satisfying the backend's validations
     const payload = {
       name: formData.name,
       email: formData.email,
       phone: formData.phone,
-      help_topic_id: formData.help_topic_id,
-      priority: 'Low',
-      subject: `Support Request - ${topicName}`,
-      description: `Support ticket opened via mobile app for Help Topic: ${topicName}. Contact phone: ${formData.phone}`
+      help_topic_id: formData.help_topic_id || (helpTopics[0]?.id?.toString() ?? '1'),
+      priority: formData.priority || 'Normal',
     };
 
     try {
@@ -163,12 +157,13 @@ export default function SubmitTicket({ setView, setTrackCredentials, userEmail }
       <View style={styles.successContainer}>
         <Animated.View style={[styles.successCard, { opacity: opacityAnim, transform: [{ scale: scaleAnim }] }]}>
           <CheckCircle size={60} color="#10B981" style={styles.successIcon} />
-          <Text style={styles.successTitle}>Ticket Logged Successfully!</Text>
+          <Text style={styles.successTitle}>Ticket Submitted!</Text>
           <Text style={styles.successText}>
-            Your service request has been registered. Please save the reference number below to track active progress.
+            Your support request has been registered. Save the reference number below to track progress.
           </Text>
 
           <View style={styles.codeContainer}>
+            <Text style={styles.codeLabel}>Ticket Number</Text>
             <Text style={styles.codeText}>{createdTicket.ticketNumber}</Text>
           </View>
 
@@ -182,9 +177,9 @@ export default function SubmitTicket({ setView, setTrackCredentials, userEmail }
 
             <TouchableOpacity 
               style={[styles.btn, styles.btnSecondary]} 
-              onPress={() => setView('home')}
+              onPress={() => setView('user-dashboard')}
             >
-              <Text style={styles.btnSecondaryText}>Return to Dashboard</Text>
+              <Text style={styles.btnSecondaryText}>Back to Tickets</Text>
             </TouchableOpacity>
           </View>
         </Animated.View>
@@ -192,18 +187,31 @@ export default function SubmitTicket({ setView, setTrackCredentials, userEmail }
     );
   }
 
-  const selectedTopicDesc = helpTopics.find(t => t.id.toString() === formData.help_topic_id)?.description || '';
-
   return (
     <KeyboardAvoidingView 
       style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 60}
     >
-      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-        <View style={styles.card}>
-          <Text style={styles.title}>Open a New Ticket</Text>
-          <Text style={styles.subtitle}>Please fill in the form below to open a new ticket.</Text>
+      <ScrollView 
+        style={styles.container} 
+        contentContainerStyle={styles.contentContainer}
+        keyboardShouldPersistTaps="handled"
+      >
 
+        {/* Back link */}
+        <TouchableOpacity style={styles.backRow} onPress={handleCancel}>
+          <ChevronLeft size={16} color="#475569" />
+          <Text style={styles.backText}>Back to tickets</Text>
+        </TouchableOpacity>
+
+        {/* Page heading */}
+        <Text style={styles.pageTitle}>New Support Ticket</Text>
+        <Text style={styles.pageSubtitle}>
+          Fill in the details below and we'll get back to you as soon as possible.
+        </Text>
+
+        <View style={styles.card}>
           {error ? (
             <View style={styles.errorBox}>
               <Text style={styles.errorText}>{error}</Text>
@@ -212,95 +220,119 @@ export default function SubmitTicket({ setView, setTrackCredentials, userEmail }
 
           {fetchingTopics ? (
             <View style={styles.loaderContainer}>
-              <ActivityIndicator size="large" color="#1E40AF" />
-              <Text style={styles.loaderText}>Loading help topics...</Text>
+              <ActivityIndicator size="large" color="#4F46E5" />
+              <Text style={styles.loaderText}>Loading form...</Text>
             </View>
           ) : (
             <View>
-              {/* Contact Information */}
-              <Text style={styles.sectionTitle}>Contact Information</Text>
-              
-              <Text style={styles.fieldLabel}>Email Address <Text style={styles.required}>*</Text></Text>
-              <TextInput
-                style={[styles.input, !!userEmail && styles.disabledInput]}
-                placeholder="customer@example.com"
-                placeholderTextColor="#94A3B8"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                value={formData.email}
-                onChangeText={(val) => handleChange('email', val)}
-                editable={!userEmail}
-              />
-
-              <Text style={styles.fieldLabel}>Full Name <Text style={styles.required}>*</Text></Text>
-              <TextInput
-                style={styles.input}
-                placeholder="First and last name"
-                placeholderTextColor="#94A3B8"
-                value={formData.name}
-                onChangeText={(val) => handleChange('name', val)}
-              />
-
-              <Text style={styles.fieldLabel}>Phone Number <Text style={styles.required}>*</Text></Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. +91 9876543210"
-                placeholderTextColor="#94A3B8"
-                keyboardType="phone-pad"
-                value={formData.phone}
-                onChangeText={(val) => handleChange('phone', val)}
-              />
-
-              {/* Help Topic */}
-              <Text style={styles.sectionTitle}>Help Topic</Text>
-
-              <Text style={styles.fieldLabel}>Help Topic <Text style={styles.required}>*</Text></Text>
-              <View style={styles.pickerContainer}>
-                <Picker
-                  selectedValue={formData.help_topic_id}
-                  style={styles.picker}
-                  onValueChange={(itemValue) => handleChange('help_topic_id', itemValue)}
-                >
-                  {helpTopics.map(topic => (
-                    <Picker.Item key={topic.id} label={topic.name} value={topic.id.toString()} />
-                  ))}
-                </Picker>
-              </View>
-              {selectedTopicDesc ? (
-                <View style={styles.infoBox}>
-                  <Info size={14} color="#3B82F6" style={styles.infoIcon} />
-                  <Text style={styles.infoText}>{selectedTopicDesc}</Text>
+              {/* Row 1: Full Name + Email */}
+              <View style={[styles.row, isWide && styles.rowWide]}>
+                <View style={[styles.halfCol, isWide && styles.halfColWide]}>
+                  <Text style={styles.fieldLabel}>
+                    Full name <Text style={styles.required}>*</Text>
+                  </Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Atchayas"
+                    placeholderTextColor="#94A3B8"
+                    value={formData.name}
+                    onChangeText={(val) => handleChange('name', val)}
+                  />
                 </View>
-              ) : null}
+                <View style={[styles.halfCol, isWide && styles.halfColWide]}>
+                  <Text style={styles.fieldLabel}>
+                    Email <Text style={styles.required}>*</Text>
+                  </Text>
+                  <TextInput
+                    style={[styles.input, !!userEmail && styles.disabledInput]}
+                    placeholder="anil@test.com"
+                    placeholderTextColor="#94A3B8"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    value={formData.email}
+                    onChangeText={(val) => handleChange('email', val)}
+                    editable={!userEmail}
+                  />
+                </View>
+              </View>
+
+              
+
+              {/* Row 2: Phone + Priority */}
+              <View style={[styles.row, isWide && styles.rowWide]}>
+                <View style={[styles.halfCol, isWide && styles.halfColWide]}>
+                  <Text style={styles.fieldLabel}>Phone</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="9345028839"
+                    placeholderTextColor="#94A3B8"
+                    keyboardType="phone-pad"
+                    value={formData.phone}
+                    onChangeText={(val) => {
+                      const digits = val.replace(/[^0-9]/g, '');
+                      handleChange('phone', digits.slice(0, 10));
+                    }}
+                    maxLength={10}
+                  />
+                </View>
+                <View style={[styles.halfCol, isWide && styles.halfColWide]}>
+                  <Text style={styles.fieldLabel}>Priority</Text>
+                  <View style={styles.pickerContainer}>
+                    <Picker
+                      selectedValue={formData.priority}
+                      style={styles.picker}
+                      onValueChange={(val) => handleChange('priority', val)}
+                    >
+                      <Picker.Item label="Low"       value="Low" />
+                      <Picker.Item label="Normal"    value="Normal" />
+                      <Picker.Item label="High"      value="High" />
+                      <Picker.Item label="Emergency" value="Emergency" />
+                    </Picker>
+                  </View>
+                </View>
+              </View>
+
+              {/* Help Topic (hidden if only one) */}
+              {helpTopics.length > 1 && (
+                <>
+                  <Text style={styles.fieldLabel}>Help Topic</Text>
+                  <View style={styles.pickerContainer}>
+                    <Picker
+                      selectedValue={formData.help_topic_id}
+                      style={styles.picker}
+                      onValueChange={(itemValue) => handleChange('help_topic_id', itemValue)}
+                    >
+                      {helpTopics.map(topic => (
+                        <Picker.Item key={topic.id} label={topic.name} value={topic.id.toString()} />
+                      ))}
+                    </Picker>
+                  </View>
+                </>
+              )}
 
               {/* Action Buttons */}
               <View style={styles.formActions}>
                 <TouchableOpacity 
-                  style={[styles.btn, styles.btnPrimary]} 
+                  style={[styles.btn, styles.btnSecondary]} 
+                  onPress={handleCancel}
+                  disabled={loading}
+                >
+                  <Text style={styles.btnSecondaryText}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[styles.btn, styles.btnPrimary, { flex: 1 }]} 
                   onPress={handleSubmit}
                   disabled={loading}
                 >
                   {loading ? (
                     <ActivityIndicator size="small" color="#FFFFFF" />
                   ) : (
-                    <Text style={styles.btnPrimaryText}>Create Ticket</Text>
+                    <View style={styles.btnRow}>
+                      <Send size={15} color="#FFFFFF" />
+                      <Text style={styles.btnPrimaryText}>Submit Ticket</Text>
+                    </View>
                   )}
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={[styles.btn, styles.btnSecondary, { flex: 0.5 }]} 
-                  onPress={handleReset}
-                  disabled={loading}
-                >
-                  <Text style={styles.btnSecondaryText}>Reset</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={[styles.btn, styles.btnSecondary, { flex: 0.5 }]} 
-                  onPress={handleCancel}
-                  disabled={loading}
-                >
-                  <Text style={styles.btnSecondaryText}>Cancel</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -314,18 +346,43 @@ export default function SubmitTicket({ setView, setTrackCredentials, userEmail }
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F1F5F9',
   },
   contentContainer: {
-    padding: 16,
+    padding: 20,
     paddingBottom: 40,
+    maxWidth: 760,
+    alignSelf: 'center',
+    width: '100%',
+  },
+  backRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  backText: {
+    fontSize: 13,
+    color: '#475569',
+    fontWeight: '500',
+  },
+  pageTitle: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#0F172A',
+    marginBottom: 6,
+  },
+  pageSubtitle: {
+    fontSize: 14,
+    color: '#64748B',
+    lineHeight: 20,
+    marginBottom: 24,
   },
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    padding: 20,
+    padding: 24,
     ...Platform.select({
       ios: {
         shadowColor: '#0F172A',
@@ -338,25 +395,13 @@ const styles = StyleSheet.create({
       },
     }),
   },
-  title: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#1E40AF',
-    marginBottom: 6,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#475569',
-    lineHeight: 18,
-    marginBottom: 20,
-  },
   errorBox: {
     backgroundColor: '#FEE2E2',
     borderLeftWidth: 4,
     borderLeftColor: '#EF4444',
     padding: 12,
     borderRadius: 6,
-    marginBottom: 16,
+    marginBottom: 20,
   },
   errorText: {
     color: '#B91C1C',
@@ -374,94 +419,105 @@ const styles = StyleSheet.create({
     marginTop: 10,
     fontWeight: '500',
   },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#0F172A',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginTop: 20,
-    marginBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    paddingBottom: 6,
+  row: {
+    flexDirection: 'column',
+    marginBottom: 8,
+    width: '100%',
+  },
+  rowWide: {
+    flexDirection: 'row',
+    gap: 16,
+    marginBottom: 8,
+  },
+  halfCol: {
+    width: '100%',
+    minWidth: 0,
+    marginBottom: 8,
+  },
+  halfColWide: {
+    flex: 1,
+    minWidth: 0,
+    marginBottom: 8,
   },
   fieldLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#475569',
-    textTransform: 'uppercase',
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#374151',
     marginBottom: 6,
-    marginTop: 10,
+    marginTop: 14,
   },
   required: {
     color: '#EF4444',
   },
+  optional: {
+    color: '#94A3B8',
+    fontWeight: '400',
+    fontSize: 12,
+  },
   input: {
-    backgroundColor: '#FAFCFF',
+    width: '100%',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#D1D5DB',
     borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: Platform.OS === 'ios' ? 12 : 8,
+    paddingHorizontal: 14,
+    paddingVertical: Platform.OS === 'ios' ? 13 : 10,
     fontSize: 14,
     color: '#0F172A',
-    marginBottom: 12,
   },
   disabledInput: {
-    backgroundColor: '#F1F5F9',
-    color: '#64748B',
-    borderColor: '#E2E8F0',
+    backgroundColor: '#F9FAFB',
+    color: '#6B7280',
+    borderColor: '#E5E7EB',
+  },
+  textArea: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 12,
+    fontSize: 14,
+    color: '#0F172A',
+    minHeight: 140,
+    textAlignVertical: 'top',
   },
   pickerContainer: {
-    backgroundColor: '#FAFCFF',
+    width: '100%',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#D1D5DB',
     borderRadius: 8,
-    marginBottom: 12,
+    marginTop: 0,
     overflow: 'hidden',
     justifyContent: 'center',
   },
   picker: {
-    height: Platform.OS === 'ios' ? 150 : 45,
+    height: Platform.OS === 'ios' ? 130 : 46,
     color: '#0F172A',
   },
-  infoBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: '#EFF6FF',
-    padding: 10,
-    borderRadius: 6,
-    gap: 8,
-    marginBottom: 12,
-  },
-  infoIcon: {
-    marginTop: 2,
-    flexShrink: 0,
-  },
-  infoText: {
-    flex: 1,
-    fontSize: 11,
-    color: '#1E40AF',
-    lineHeight: 15,
-  },
   formActions: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 24,
+    flexDirection: 'column',
+    marginTop: 28,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
-    paddingTop: 16,
+    paddingTop: 20,
+    justifyContent: 'flex-end',
   },
   btn: {
-    height: 44,
+    height: 46,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  btnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   btnPrimary: {
-    flex: 1,
-    backgroundColor: '#1E40AF',
+    backgroundColor: '#4F46E5',
   },
   btnPrimaryText: {
     color: '#FFFFFF',
@@ -469,18 +525,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   btnSecondary: {
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#D1D5DB',
+    minWidth: 90,
   },
   btnSecondaryText: {
-    color: '#475569',
-    fontWeight: '700',
+    color: '#374151',
+    fontWeight: '600',
     fontSize: 14,
   },
   successContainer: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.2)',
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
@@ -488,21 +545,21 @@ const styles = StyleSheet.create({
   successCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 24,
+    padding: 32,
     alignItems: 'center',
     width: '100%',
-    maxWidth: 400,
-    borderTopWidth: 6,
+    maxWidth: 420,
+    borderTopWidth: 5,
     borderTopColor: '#10B981',
     ...Platform.select({
       ios: {
         shadowColor: '#0F172A',
         shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.1,
+        shadowOpacity: 0.08,
         shadowRadius: 12,
       },
       android: {
-        elevation: 6,
+        elevation: 5,
       },
     }),
   },
@@ -510,44 +567,58 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   successTitle: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: '800',
     color: '#0F172A',
     textAlign: 'center',
     marginBottom: 8,
   },
   successText: {
-    fontSize: 13,
+    fontSize: 14,
     color: '#475569',
     textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 20,
+    lineHeight: 20,
+    marginBottom: 24,
   },
   codeContainer: {
     backgroundColor: '#ECFDF5',
     borderWidth: 2,
     borderStyle: 'dashed',
     borderColor: '#10B981',
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    marginBottom: 20,
+    borderRadius: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    marginBottom: 24,
     width: '100%',
     alignItems: 'center',
   },
+  codeLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#065F46',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
   codeText: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '900',
     color: '#065F46',
-    letterSpacing: 1.5,
+    letterSpacing: 2,
   },
   successActions: {
     width: '100%',
-    gap: 8,
+  },
+  actionButtonSpacing: {
+    marginBottom: 10,
   },
   btnAccent: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#4F46E5',
     width: '100%',
+    height: 46,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   btnAccentText: {
     color: '#FFFFFF',

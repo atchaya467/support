@@ -9,18 +9,20 @@ import {
   ActivityIndicator,
   Platform,
   Image,
+  useWindowDimensions,
 } from 'react-native';
 import {
   Lock,
   Mail,
   ArrowRight,
-  Smartphone,
   QrCode,
   ShieldCheck,
 } from 'lucide-react-native';
 import { API_BASE_URL, fetchWithTimeout } from '../config';
 
 export default function UserLogin({ onLoginSuccess }) {
+  const { width } = useWindowDimensions();
+  const isWide = width >= 640;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -76,7 +78,7 @@ export default function UserLogin({ onLoginSuccess }) {
         setMfaToken('');
         setShowMfaStep(true);
       } else {
-        onLoginSuccess(trimmedEmail);
+        onLoginSuccess(trimmedEmail, data.name || '', data.phone || '');
       }
       setLoading(false);
     } catch (err) {
@@ -112,7 +114,10 @@ export default function UserLogin({ onLoginSuccess }) {
       const response = await fetchWithTimeout(`${API_BASE_URL}/api/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: trimmedEmail, password: trimmedPassword }),
+        body: JSON.stringify({ 
+          email: trimmedEmail, 
+          password: trimmedPassword 
+        }),
       });
 
       const data = await response.json();
@@ -130,7 +135,7 @@ export default function UserLogin({ onLoginSuccess }) {
         setMfaToken('');
         setShowMfaStep(true);
       } else {
-        onLoginSuccess(trimmedEmail);
+        onLoginSuccess(trimmedEmail, data.name || '', data.phone || '');
       }
       setLoading(false);
     } catch (err) {
@@ -174,7 +179,7 @@ export default function UserLogin({ onLoginSuccess }) {
       }
 
       setLoading(false);
-      onLoginSuccess(email.trim());
+      onLoginSuccess(email.trim(), data.name || '', data.phone || '');
     } catch (err) {
       setError(err.message || 'Could not connect to server.');
       setLoading(false);
@@ -193,9 +198,13 @@ export default function UserLogin({ onLoginSuccess }) {
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.contentContainer}
+      contentContainerStyle={[
+        styles.contentContainer,
+        isWide && styles.contentContainerWide,
+      ]}
+      keyboardShouldPersistTaps="handled"
     >
-      <View style={styles.card}>
+      <View style={[styles.card, isWide && styles.cardWide]}>
         <View style={styles.headerContainer}>
           <View style={styles.iconContainer}>
             {showMfaStep ? (
@@ -285,7 +294,7 @@ export default function UserLogin({ onLoginSuccess }) {
                   <Text style={{ fontWeight: '700' }}>
                     Demo Accounts:
                   </Text>{' '}
-                  admin@example.com / admin123, user@example.com / user123, demo@example.com / demo123
+                  admin@forte.com / admin123, user@forte.com / user123, demo@forte.com / demo123
                 </Text>
               </View>
             ) : (
@@ -424,10 +433,14 @@ const styles = StyleSheet.create({
   },
 
   contentContainer: {
+    flexGrow: 1,
     padding: 16,
-    paddingVertical: 40,
+    paddingVertical: 32,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  contentContainerWide: {
+    paddingVertical: 60,
   },
 
   card: {
@@ -438,7 +451,6 @@ const styles = StyleSheet.create({
     padding: 24,
     width: '100%',
     maxWidth: 450,
-
     ...Platform.select({
       ios: {
         shadowColor: '#0F172A',
@@ -446,11 +458,13 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.05,
         shadowRadius: 8,
       },
-
       android: {
         elevation: 2,
       },
     }),
+  },
+  cardWide: {
+    maxWidth: 520,
   },
 
   headerContainer: {
