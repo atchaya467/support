@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -10,8 +10,22 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Animated,
 } from 'react-native';
-import { ArrowLeft, RefreshCw, Search, Send, Printer, Edit3 } from 'lucide-react-native';
+import {
+  ArrowLeft,
+  RefreshCw,
+  Search,
+  Send,
+  Printer,
+  Edit3,
+  Mail,
+  Phone,
+  User,
+  Clock,
+  Tag,
+  MessageSquare,
+} from 'lucide-react-native';
 import { API_BASE_URL, fetchWithTimeout } from '../config';
 
 export default function TrackTicket({
@@ -30,6 +44,10 @@ export default function TrackTicket({
   const [submittingReply, setSubmittingReply] = useState(false);
   const [error, setError] = useState('');
 
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(18)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
   useEffect(() => {
     if (trackCredentials?.email && trackCredentials?.ticketNumber) {
       handleLookup(trackCredentials.email, trackCredentials.ticketNumber);
@@ -40,6 +58,41 @@ export default function TrackTicket({
     if (userEmail) setEmail(userEmail);
   }, [userEmail]);
 
+  useEffect(() => {
+    fadeAnim.setValue(0);
+    slideAnim.setValue(18);
+
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 450,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 450,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [ticket]);
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.08,
+          duration: 900,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 900,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
+
   const formatDateTime = (dateString) => {
     if (!dateString) return '-';
     return new Date(dateString).toLocaleString('en-GB', {
@@ -49,6 +102,34 @@ export default function TrackTicket({
       hour: '2-digit',
       minute: '2-digit',
     });
+  };
+
+  const getStatusBadgeStyle = (status) => {
+    switch ((status || 'Open').toLowerCase()) {
+      case 'closed':
+        return styles.statusClosed;
+      case 'resolved':
+        return styles.statusResolved;
+      case 'in progress':
+        return styles.statusProgress;
+      default:
+        return styles.statusOpen;
+    }
+  };
+
+  const getPriorityBadgeStyle = (priority) => {
+    switch ((priority || 'Normal').toLowerCase()) {
+      case 'emergency':
+        return styles.priorityEmergency;
+      case 'high':
+        return styles.priorityHigh;
+      case 'medium':
+        return styles.priorityMedium;
+      case 'low':
+        return styles.priorityLow;
+      default:
+        return styles.priorityNormal;
+    }
   };
 
   const handleLookup = async (customEmail, customTicketNumber) => {
@@ -139,9 +220,17 @@ export default function TrackTicket({
   if (!ticket) {
     return (
       <ScrollView style={styles.container} contentContainerStyle={styles.lookupContainer}>
-        <View style={styles.lookupBox}>
+        <Animated.View
+          style={[
+            styles.lookupBox,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
           <TouchableOpacity style={styles.backLink} onPress={() => setView('user-dashboard')}>
-            <ArrowLeft size={16} color="#2F6F91" />
+            <ArrowLeft size={16} color="#2563EB" />
             <Text style={styles.backLinkText}>Back to Tickets</Text>
           </TouchableOpacity>
 
@@ -165,7 +254,7 @@ export default function TrackTicket({
             keyboardType="email-address"
             autoCapitalize="none"
             placeholder="customer@email.com"
-            placeholderTextColor="#777"
+            placeholderTextColor="#9CA3AF"
           />
 
           <Text style={styles.formLabel}>Ticket Number</Text>
@@ -176,7 +265,7 @@ export default function TrackTicket({
             editable={!loading}
             autoCapitalize="none"
             placeholder="AL-123456"
-            placeholderTextColor="#777"
+            placeholderTextColor="#9CA3AF"
           />
 
           <TouchableOpacity
@@ -193,67 +282,94 @@ export default function TrackTicket({
               </View>
             )}
           </TouchableOpacity>
-        </View>
+        </Animated.View>
       </ScrollView>
     );
   }
 
   return (
-  <KeyboardAvoidingView
-    style={styles.screen}
-    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-  >
-    <View style={[styles.container, styles.detailContainer]}>
+    <KeyboardAvoidingView
+      style={styles.screen}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <Animated.View
+        style={[
+          styles.container,
+          styles.detailContainer,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }],
+          },
+        ]}
+      >
         <View style={styles.topActions}>
           <TouchableOpacity style={styles.smallButton} onPress={handleBack}>
-            <ArrowLeft size={14} color="#333" />
+            <ArrowLeft size={14} color="#111827" />
             <Text style={styles.smallButtonText}>Back</Text>
           </TouchableOpacity>
 
           <View style={styles.rightActions}>
-            <TouchableOpacity style={styles.smallButton} onPress={() => handleLookup(ticket.email, ticket.ticket_number)}>
-              <RefreshCw size={13} color="#333" />
+            <TouchableOpacity
+              style={styles.smallButton}
+              onPress={() => handleLookup(ticket.email, ticket.ticket_number)}
+            >
+              <RefreshCw size={13} color="#111827" />
               <Text style={styles.smallButtonText}>Refresh</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.smallButton}>
-              <Printer size={13} color="#333" />
+              <Printer size={13} color="#111827" />
               <Text style={styles.smallButtonText}>Print</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.smallButton}>
-              <Edit3 size={13} color="#333" />
+              <Edit3 size={13} color="#111827" />
               <Text style={styles.smallButtonText}>Edit</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        <View style={styles.ticketHeadingRow}>
-          <RefreshCw size={20} color="#5B8F22" />
-          <Text style={styles.ticketHeading}>
-            {ticket.help_topic_name || 'Support Ticket'} #{ticket.ticket_number}
-          </Text>
-        </View>
+        <View style={styles.heroCard}>
+          <View style={styles.ticketHeadingRow}>
+            <Animated.View style={[styles.pulseDot, { transform: [{ scale: pulseAnim }] }]} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.ticketMeta}>{ticket.ticket_number}</Text>
+              <Text style={styles.ticketHeading}>
+                {ticket.help_topic_name || 'Support Ticket'}
+              </Text>
+            </View>
 
-        <View style={styles.dottedLine} />
+            <View style={styles.badgeRow}>
+              <View style={[styles.statusBadge, getStatusBadgeStyle(ticket.status)]}>
+                <Text style={styles.badgeText}>{ticket.status}</Text>
+              </View>
+              <View style={[styles.statusBadge, getPriorityBadgeStyle(ticket.priority)]}>
+                <Text style={styles.badgeText}>{ticket.priority || 'Normal'}</Text>
+              </View>
+            </View>
+          </View>
+        </View>
 
         <View style={styles.infoGrid}>
           <View style={styles.infoColumn}>
             <Text style={styles.sectionTitle}>Basic Ticket Information</Text>
 
             <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Ticket Status:</Text>
-              <Text style={styles.infoValue}>{ticket.status}</Text>
-            </View>
-
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Department:</Text>
-              <Text style={styles.infoValue}>{ticket.priority || 'L1 Leykart'}</Text>
-            </View>
-
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Create Date:</Text>
+              <Clock size={14} color="#2563EB" />
+              <Text style={styles.infoLabel}>Create Date</Text>
               <Text style={styles.infoValue}>{formatDateTime(ticket.created_at)}</Text>
+            </View>
+
+            <View style={styles.infoRow}>
+              <Tag size={14} color="#2563EB" />
+              <Text style={styles.infoLabel}>Ticket Type</Text>
+              <Text style={styles.infoValue}>{ticket.help_topic_name || 'Support Ticket'}</Text>
+            </View>
+
+            <View style={styles.infoRow}>
+              <RefreshCw size={14} color="#2563EB" />
+              <Text style={styles.infoLabel}>Status</Text>
+              <Text style={styles.infoValue}>{ticket.status}</Text>
             </View>
           </View>
 
@@ -261,42 +377,28 @@ export default function TrackTicket({
             <Text style={styles.sectionTitle}>User Information</Text>
 
             <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Name:</Text>
+              <User size={14} color="#2563EB" />
+              <Text style={styles.infoLabel}>Name</Text>
               <Text style={styles.infoValue}>{ticket.name}</Text>
             </View>
 
             <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Email:</Text>
+              <Mail size={14} color="#2563EB" />
+              <Text style={styles.infoLabel}>Email</Text>
               <Text style={styles.infoValue}>{ticket.email}</Text>
             </View>
 
             <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Phone:</Text>
+              <Phone size={14} color="#2563EB" />
+              <Text style={styles.infoLabel}>Phone</Text>
               <Text style={styles.infoValue}>{ticket.phone}</Text>
             </View>
           </View>
         </View>
 
-        <View style={styles.sectionBlock}>
-          <Text style={styles.sectionTitleUpper}>MARKET INTELLIGENCE</Text>
-          <View style={styles.fullInfoRow}>
-            <Text style={styles.fullInfoLabel}>Ticket Type:</Text>
-            <Text style={styles.fullInfoValue}>
-              {ticket.help_topic_name || 'Access control - Roles & Authorizations'}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.sectionBlock}>
-          <Text style={styles.sectionTitleUpper}>MARKET INTELLIGENCE</Text>
-          <View style={styles.fullInfoRow}>
-            <Text style={styles.fullInfoLabel}>Subcategories:</Text>
-            <Text style={styles.fullInfoValue}>Login</Text>
-          </View>
-        </View>
-
         <View style={styles.messagePanel}>
           <View style={styles.messageHeader}>
+            <MessageSquare size={15} color="#2563EB" />
             <Text style={styles.messageHeaderText}>
               {ticket.name} posted {formatDateTime(ticket.created_at)}
             </Text>
@@ -322,7 +424,7 @@ export default function TrackTicket({
             onChangeText={setNewReply}
             multiline
             placeholder="Type your reply..."
-            placeholderTextColor="#777"
+            placeholderTextColor="#9CA3AF"
             editable={!submittingReply}
           />
 
@@ -342,23 +444,27 @@ export default function TrackTicket({
         <Text style={styles.replyTitle}>Conversation</Text>
 
         {repliesLoading ? (
-          <ActivityIndicator size="small" color="#2F6F91" style={{ marginVertical: 16 }} />
+          <ActivityIndicator size="small" color="#2563EB" style={{ marginVertical: 16 }} />
         ) : replies.length === 0 ? (
-          <Text style={styles.emptyReplies}>No replies yet.</Text>
+          <View style={styles.emptyConversation}>
+            <Text style={styles.emptyReplies}>No replies yet.</Text>
+          </View>
         ) : (
-          replies.map(reply => (
-            <View key={reply.id} style={styles.replyItem}>
-              <View style={styles.replyItemHeader}>
-                <Text style={styles.replySender}>
-                  {reply.sender === 'Staff' ? 'Support Team' : reply.name}
-                </Text>
-                <Text style={styles.replyDate}>{formatDateTime(reply.created_at)}</Text>
+          <ScrollView style={styles.replyList}>
+            {replies.map(reply => (
+              <View key={reply.id} style={styles.replyItem}>
+                <View style={styles.replyItemHeader}>
+                  <Text style={styles.replySender}>
+                    {reply.sender === 'Staff' ? 'Support Team' : reply.name}
+                  </Text>
+                  <Text style={styles.replyDate}>{formatDateTime(reply.created_at)}</Text>
+                </View>
+                <Text style={styles.replyMessage}>{reply.message}</Text>
               </View>
-              <Text style={styles.replyMessage}>{reply.message}</Text>
-            </View>
-          ))
+            ))}
+          </ScrollView>
         )}
-      </View>
+      </Animated.View>
     </KeyboardAvoidingView>
   );
 }
@@ -369,16 +475,24 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: '#F5F7FB',
   },
   lookupContainer: {
     padding: 18,
+    minHeight: '100%',
+    justifyContent: 'center',
   },
   lookupBox: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#C8C8C8',
-    padding: 18,
+    borderColor: '#E5E7EB',
+    borderRadius: 18,
+    padding: 22,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    elevation: 5,
   },
   backLink: {
     flexDirection: 'row',
@@ -387,49 +501,53 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   backLinkText: {
-    color: '#2F6F91',
-    fontWeight: '700',
+    color: '#2563EB',
+    fontWeight: '800',
   },
   lookupTitle: {
-    fontSize: 24,
-    color: '#2F6F91',
+    fontSize: 26,
+    color: '#111827',
+    fontWeight: '900',
     marginBottom: 6,
   },
   lookupSubtitle: {
     fontSize: 14,
-    color: '#333',
+    color: '#64748B',
     marginBottom: 18,
   },
   formLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#333',
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#374151',
     marginBottom: 6,
+    textTransform: 'uppercase',
   },
   input: {
-    height: 36,
+    height: 42,
     borderWidth: 1,
-    borderColor: '#888',
+    borderColor: '#D1D5DB',
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 10,
+    borderRadius: 10,
+    paddingHorizontal: 12,
     marginBottom: 14,
-    color: '#111',
+    color: '#111827',
   },
   disabledInput: {
-    backgroundColor: '#F0F0F0',
-    color: '#666',
+    backgroundColor: '#F3F4F6',
+    color: '#64748B',
   },
   lookupButton: {
-    height: 38,
-    backgroundColor: '#2F6F91',
+    height: 42,
+    backgroundColor: '#2563EB',
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     alignSelf: 'flex-start',
   },
   lookupButtonText: {
     color: '#FFFFFF',
-    fontWeight: '700',
+    fontWeight: '900',
   },
   buttonRow: {
     flexDirection: 'row',
@@ -437,8 +555,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   detailContainer: {
-    padding: 12,
-    paddingBottom: 8,
+    padding: 16,
+    paddingBottom: 10,
   },
   topActions: {
     flexDirection: 'row',
@@ -452,200 +570,283 @@ const styles = StyleSheet.create({
   smallButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
     borderWidth: 1,
-    borderColor: '#AAA',
-    backgroundColor: '#EFEFEF',
-    paddingHorizontal: 8,
-    height: 28,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 34,
   },
   smallButtonText: {
     fontSize: 12,
-    color: '#333',
+    color: '#111827',
+    fontWeight: '800',
   },
   errorBox: {
     backgroundColor: '#FEE2E2',
     borderLeftWidth: 4,
     borderLeftColor: '#EF4444',
-    padding: 10,
+    padding: 12,
     marginBottom: 12,
+    borderRadius: 10,
   },
   errorText: {
     color: '#B91C1C',
-    fontWeight: '700',
+    fontWeight: '800',
     fontSize: 13,
+  },
+  heroCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    elevation: 4,
   },
   ticketHeadingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
-    marginBottom: 10,
+    gap: 12,
+  },
+  pulseDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#22C55E',
+  },
+  ticketMeta: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '900',
+    marginBottom: 2,
   },
   ticketHeading: {
-    fontSize: 18,
-    color: '#2F6F91',
-    fontWeight: '500',
+    fontSize: 22,
+    color: '#111827',
+    fontWeight: '900',
   },
-  dottedLine: {
-    borderBottomWidth: 1,
-    borderStyle: 'dotted',
-    borderColor: '#AAA',
-    marginBottom: 14,
+  badgeRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  statusBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+  },
+  badgeText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#111827',
+    textTransform: 'uppercase',
+  },
+  statusOpen: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#86EFAC',
+  },
+  statusProgress: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FCD34D',
+  },
+  statusResolved: {
+    backgroundColor: '#DBEAFE',
+    borderColor: '#93C5FD',
+  },
+  statusClosed: {
+    backgroundColor: '#F3F4F6',
+    borderColor: '#D1D5DB',
+  },
+  priorityEmergency: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#FCA5A5',
+  },
+  priorityHigh: {
+    backgroundColor: '#FFEDD5',
+    borderColor: '#FDBA74',
+  },
+  priorityMedium: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FCD34D',
+  },
+  priorityNormal: {
+    backgroundColor: '#DBEAFE',
+    borderColor: '#93C5FD',
+  },
+  priorityLow: {
+    backgroundColor: '#F3F4F6',
+    borderColor: '#D1D5DB',
   },
   infoGrid: {
     flexDirection: 'row',
-    gap: 24,
-    marginBottom: 8,
+    gap: 12,
+    marginBottom: 12,
   },
   infoColumn: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 16,
+    padding: 14,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+    elevation: 3,
   },
   sectionTitle: {
     fontSize: 15,
-    fontWeight: '800',
-    color: '#111',
-    borderBottomWidth: 1,
-    borderBottomColor: '#777',
-    paddingBottom: 5,
-    marginBottom: 8,
+    fontWeight: '900',
+    color: '#111827',
+    marginBottom: 12,
   },
   infoRow: {
     flexDirection: 'row',
-    marginBottom: 8,
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 9,
   },
   infoLabel: {
-    width: 120,
-    fontSize: 14,
-    color: '#333',
+    width: 90,
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '700',
   },
   infoValue: {
     flex: 1,
-    fontSize: 14,
-    color: '#111',
-  },
-  sectionBlock: {
-    borderTopWidth: 1,
-    borderTopColor: '#999',
-    paddingTop: 6,
-    marginBottom: 8,
-  },
-  sectionTitleUpper: {
-    fontSize: 15,
-    fontWeight: '900',
-    color: '#111',
-    marginBottom: 10,
-  },
-  fullInfoRow: {
-    flexDirection: 'row',
-  },
-  fullInfoLabel: {
-    width: 180,
-    fontSize: 14,
-    color: '#333',
-  },
-  fullInfoValue: {
-    flex: 1,
-    fontSize: 14,
-    color: '#111',
-    fontWeight: '600',
+    fontSize: 13,
+    color: '#111827',
+    fontWeight: '800',
   },
   messagePanel: {
     borderWidth: 1,
-    borderColor: '#9CA3AF',
+    borderColor: '#CBD5E1',
     backgroundColor: '#FFFFFF',
-    marginBottom: 8,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 10,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+    elevation: 3,
   },
   messageHeader: {
-    backgroundColor: '#BFD0E3',
-    padding: 10,
+    backgroundColor: '#DBEAFE',
+    padding: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#9CA3AF',
+    borderBottomColor: '#BFDBFE',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   messageHeaderText: {
-    fontWeight: '800',
-    color: '#111',
+    fontWeight: '900',
+    color: '#111827',
   },
   messageBody: {
-    padding: 10,
-    minHeight: 34,
-    color: '#111',
+    padding: 12,
+    minHeight: 38,
+    color: '#111827',
   },
   timelineLine: {
     borderTopWidth: 1,
-    borderTopColor: '#DDD',
+    borderTopColor: '#E5E7EB',
     paddingTop: 8,
     marginBottom: 8,
     alignItems: 'center',
   },
   timelineText: {
-    fontSize: 14,
-    color: '#333',
+    fontSize: 13,
+    color: '#64748B',
   },
   bold: {
-    fontWeight: '800',
+    fontWeight: '900',
+    color: '#111827',
   },
   replyTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#111',
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#111827',
     marginBottom: 8,
   },
   replyBox: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 8,
-    marginBottom: 18,
+    marginBottom: 12,
   },
   replyInput: {
     flex: 1,
-    minHeight: 46,
+    minHeight: 52,
     maxHeight: 120,
     borderWidth: 1,
-    borderColor: '#AAA',
+    borderColor: '#D1D5DB',
     backgroundColor: '#FFFFFF',
-    padding: 10,
+    borderRadius: 12,
+    padding: 12,
     textAlignVertical: 'top',
-    color: '#111',
+    color: '#111827',
   },
   sendButton: {
-    width: 42,
-    height: 42,
-    backgroundColor: '#2F6F91',
+    width: 46,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: '#2563EB',
     alignItems: 'center',
     justifyContent: 'center',
   },
   sendButtonDisabled: {
-    backgroundColor: '#AAA',
+    backgroundColor: '#CBD5E1',
+  },
+  emptyConversation: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 14,
+    padding: 14,
   },
   emptyReplies: {
-    color: '#666',
-    marginBottom: 20,
+    color: '#64748B',
+    fontWeight: '700',
+  },
+  replyList: {
+    maxHeight: 150,
   },
   replyItem: {
     borderWidth: 1,
-    borderColor: '#C8C8C8',
+    borderColor: '#E5E7EB',
     backgroundColor: '#FFFFFF',
+    borderRadius: 14,
     marginBottom: 10,
+    overflow: 'hidden',
   },
   replyItemHeader: {
-    backgroundColor: '#E9EEF0',
+    backgroundColor: '#F8FAFC',
     borderBottomWidth: 1,
-    borderBottomColor: '#C8C8C8',
-    padding: 8,
+    borderBottomColor: '#E5E7EB',
+    padding: 10,
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
   replySender: {
-    fontWeight: '800',
-    color: '#111',
+    fontWeight: '900',
+    color: '#111827',
   },
   replyDate: {
-    color: '#555',
+    color: '#64748B',
     fontSize: 12,
   },
   replyMessage: {
-    padding: 10,
-    color: '#111',
+    padding: 12,
+    color: '#111827',
     lineHeight: 20,
   },
 });
