@@ -1,247 +1,153 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  StyleSheet, 
-  View, 
-  Text, 
-  TextInput, 
-  ScrollView, 
-  TouchableOpacity, 
-  ActivityIndicator, 
-  KeyboardAvoidingView, 
+import React, { useEffect, useState } from 'react';
+import {
+  StyleSheet,
+  View,
+  Text,
+  TextInput,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  KeyboardAvoidingView,
   Platform,
-  Alert
+  Alert,
 } from 'react-native';
-import { Search, ArrowLeft, RefreshCw, FileText, User, Calendar, MessageSquare, Send, ShieldAlert, Key, Lock } from 'lucide-react-native';
+import { ArrowLeft, RefreshCw, Search, Send, Printer, Edit3 } from 'lucide-react-native';
 import { API_BASE_URL, fetchWithTimeout } from '../config';
 
-export default function TrackTicket({ setView, trackCredentials, setTrackCredentials, userEmail }) {
-  // Authentication lookup state
+export default function TrackTicket({
+  setView,
+  trackCredentials,
+  setTrackCredentials,
+  userEmail,
+}) {
   const [email, setEmail] = useState(trackCredentials?.email || userEmail || '');
   const [ticketNumber, setTicketNumber] = useState(trackCredentials?.ticketNumber || '');
-  
-  // App states
   const [ticket, setTicket] = useState(null);
   const [replies, setReplies] = useState([]);
   const [newReply, setNewReply] = useState('');
   const [loading, setLoading] = useState(false);
+  const [repliesLoading, setRepliesLoading] = useState(false);
   const [submittingReply, setSubmittingReply] = useState(false);
   const [error, setError] = useState('');
-  const [replySuccess, setReplySuccess] = useState(false);
 
-  // Verification CAPTCHA + OTP States
-  const [showVerification, setShowVerification] = useState(false);
-  const [captchaText, setCaptchaText] = useState('');
-  const [userCaptcha, setUserCaptcha] = useState('');
-  const [captchaChallenge, setCaptchaChallenge] = useState('');
-  const [otpText, setOtpText] = useState('');
-  const [userOtp, setUserOtp] = useState('');
-  const [verificationError, setVerificationError] = useState('');
-  const [pendingTicket, setPendingTicket] = useState(null);
-  const [pendingReplies, setPendingReplies] = useState([]);
-
-  // Auto load ticket if credentials exist on mount
   useEffect(() => {
     if (trackCredentials?.email && trackCredentials?.ticketNumber) {
-      handleLookup(trackCredentials.email, trackCredentials.ticketNumber, true); // skip verification on active session
+      handleLookup(trackCredentials.email, trackCredentials.ticketNumber);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sync userEmail
   useEffect(() => {
-    if (userEmail) {
-      setEmail(userEmail);
-    }
+    if (userEmail) setEmail(userEmail);
   }, [userEmail]);
 
-  const generateCaptchaAndOtp = () => {
-    const val1 = Math.floor(Math.random() * 10) + 1;
-    const val2 = Math.floor(Math.random() * 10) + 1;
-    setCaptchaText((val1 + val2).toString());
-    setCaptchaChallenge(`${val1} + ${val2} = ?`);
-    setUserCaptcha('');
-
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    setOtpText(code);
-    setUserOtp('');
-    setVerificationError('');
+  const formatDateTime = (dateString) => {
+    if (!dateString) return '-';
+    return new Date(dateString).toLocaleString('en-GB', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
-  // Lookup API call
-  const handleLookup = async (customEmail, customNum, skipVerify = false) => {
+  const handleLookup = async (customEmail, customTicketNumber) => {
     setError('');
-    
-    const validEmail = typeof customEmail === 'string' ? customEmail : '';
-    const validNum = typeof customNum === 'string' ? customNum : '';
 
-    const lookupEmail = (validEmail || email).trim();
-    const lookupNum = (validNum || ticketNumber).trim();
+    const lookupEmail = (customEmail || email).trim();
+    const lookupTicketNumber = (customTicketNumber || ticketNumber).trim();
 
-    if (!lookupEmail && !lookupNum) {
-      setError('Please enter both your email address and ticket reference code.');
-      return;
-    }
-    if (!lookupEmail) {
-      setError('Please enter your email address.');
-      return;
-    }
-    if (!lookupNum) {
-      setError('Please enter your ticket reference code.');
-      return;
-    }
+    if (!lookupEmail) return setError('Please enter your email address.');
+    if (!lookupTicketNumber) return setError('Please enter your ticket number.');
 
     setLoading(true);
+
     try {
-      // 1. Fetch ticket details
-      const response = await fetchWithTimeout(`${API_BASE_URL}/api/tickets/track?email=${encodeURIComponent(lookupEmail)}&ticket_number=${encodeURIComponent(lookupNum)}`);
+      const response = await fetchWithTimeout(
+        `${API_BASE_URL}/api/tickets/track?email=${encodeURIComponent(
+          lookupEmail
+        )}&ticket_number=${encodeURIComponent(lookupTicketNumber)}`
+      );
+
       const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Ticket not found.');
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Ticket not found. Verify email and reference number.');
-      }
+      setTicket(data);
+      setTrackCredentials({
+        email: lookupEmail,
+        ticketNumber: lookupTicketNumber,
+      });
 
-      // 2. Fetch replies
-      let repliesData = [];
-      const repliesResponse = await fetchWithTimeout(`${API_BASE_URL}/api/tickets/${data.id}/replies`);
-      if (repliesResponse.ok) {
-        repliesData = await repliesResponse.json();
-      }
-
-      if (skipVerify) {
-        setTicket(data);
-        setReplies(repliesData);
-      } else {
-        setPendingTicket(data);
-        setPendingReplies(repliesData);
-        generateCaptchaAndOtp();
-        setShowVerification(true);
-      }
+      await fetchReplies(data.id);
     } catch (err) {
-      setError(err.message || 'An unexpected connection error occurred.');
+      setError(err.message || 'Unable to load ticket.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleVerifyAccess = () => {
-    setVerificationError('');
+  const fetchReplies = async (ticketId) => {
+    setRepliesLoading(true);
 
-    if (userCaptcha.trim() !== captchaText) {
-      setVerificationError('CAPTCHA answer is incorrect.');
-      return;
+    try {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/api/tickets/${ticketId}/replies`);
+      if (!response.ok) throw new Error('Failed to load replies.');
+      const data = await response.json();
+      setReplies(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setRepliesLoading(false);
     }
-
-    if (userOtp.trim() !== otpText) {
-      setVerificationError('Verification OTP code is incorrect.');
-      return;
-    }
-
-    // Success - load ticket
-    setTicket(pendingTicket);
-    setReplies(pendingReplies);
-    setShowVerification(false);
-    
-    // Save session credentials
-    setTrackCredentials({ email: email.trim(), ticketNumber: ticketNumber.trim() });
   };
 
-  // Submit reply
+  const handleBack = () => {
+    setTicket(null);
+    setReplies([]);
+    setTicketNumber('');
+    setTrackCredentials(null);
+  };
+
   const handlePostReply = async () => {
-    if (!newReply.trim()) return;
+    if (!ticket || !newReply.trim()) return;
 
     setSubmittingReply(true);
-    setReplySuccess(false);
-    setError('');
 
     try {
       const response = await fetchWithTimeout(`${API_BASE_URL}/api/tickets/${ticket.id}/replies`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sender: 'Client',
           name: ticket.name,
-          message: newReply.trim()
-        })
+          message: newReply.trim(),
+        }),
       });
 
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to submit reply');
-      }
+      if (!response.ok) throw new Error(data.error || 'Failed to post reply.');
 
       setReplies(prev => [...prev, data]);
       setNewReply('');
-      setReplySuccess(true);
-      setTimeout(() => setReplySuccess(false), 3000);
     } catch (err) {
-      Alert.alert('Error', err.message || 'Error posting reply');
+      Alert.alert('Error', err.message || 'Error posting reply.');
     } finally {
       setSubmittingReply(false);
     }
   };
 
-  const handleClearCredentials = () => {
-    setTicket(null);
-    setReplies([]);
-    setTrackCredentials(null);
-    setEmail('');
-    setTicketNumber('');
-    setShowVerification(false);
-  };
-
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
-  const getPriorityStyle = (priority) => {
-    switch (priority) {
-      case 'Emergency': return styles.badgeRed;
-      case 'High': return styles.badgeOrange;
-      case 'Medium': return styles.badgeYellow;
-      default: return styles.badgeGray;
-    }
-  };
-
-  const getStatusStyle = (status) => {
-    switch (status) {
-      case 'Resolved': return styles.badgeGreen;
-      case 'In Progress': return styles.badgeYellow;
-      case 'Closed': return styles.badgeGray;
-      default: return styles.badgeBlue;
-    }
-  };
-
-  // UNIFIED SEARCH & VERIFICATION VIEW
   if (!ticket) {
     return (
-      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-        <View style={styles.card}>
-          <TouchableOpacity style={styles.backLink} onPress={() => {
-            if (showVerification) {
-              setShowVerification(false);
-              setVerificationError('');
-            } else {
-              setView('home');
-            }
-          }}>
-            <ArrowLeft size={16} color="#1E40AF" />
-            <Text style={styles.backLinkText}>
-              {showVerification ? 'Back to Search' : 'Back to Dashboard'}
-            </Text>
+      <ScrollView style={styles.container} contentContainerStyle={styles.lookupContainer}>
+        <View style={styles.lookupBox}>
+          <TouchableOpacity style={styles.backLink} onPress={() => setView('user-dashboard')}>
+            <ArrowLeft size={16} color="#2F6F91" />
+            <Text style={styles.backLinkText}>Back to Tickets</Text>
           </TouchableOpacity>
 
-          <Text style={styles.title}>Track Ticket Status</Text>
-          <Text style={styles.subtitle}>
-            {showVerification 
-              ? 'Complete the CAPTCHA and OTP challenge to verify your identity.'
-              : 'Enter your logged email address and ticket reference code to inspect progress.'}
+          <Text style={styles.lookupTitle}>Check Ticket Status</Text>
+          <Text style={styles.lookupSubtitle}>
+            Enter email and ticket number to view ticket details.
           </Text>
 
           {error ? (
@@ -250,218 +156,178 @@ export default function TrackTicket({ setView, trackCredentials, setTrackCredent
             </View>
           ) : null}
 
-          {verificationError ? (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{verificationError}</Text>
-            </View>
-          ) : null}
-
-          <Text style={styles.fieldLabel}>Your Email Address</Text>
+          <Text style={styles.formLabel}>Email Address</Text>
           <TextInput
-            style={[styles.input, (showVerification || !!userEmail) && styles.disabledInput]}
-            placeholder="customer@example.com"
-            placeholderTextColor="#94A3B8"
-            keyboardType="email-address"
-            autoCapitalize="none"
+            style={[styles.input, !!userEmail && styles.disabledInput]}
             value={email}
             onChangeText={setEmail}
-            editable={!showVerification && !userEmail && !loading}
+            editable={!userEmail && !loading}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            placeholder="customer@email.com"
+            placeholderTextColor="#777"
           />
 
-          <Text style={styles.fieldLabel}>Ticket Reference Code</Text>
+          <Text style={styles.formLabel}>Ticket Number</Text>
           <TextInput
-            style={[styles.input, showVerification && styles.disabledInput]}
-            placeholder="e.g. AL-123456"
-            placeholderTextColor="#94A3B8"
-            autoCapitalize="none"
+            style={styles.input}
             value={ticketNumber}
             onChangeText={setTicketNumber}
-            editable={!showVerification && !loading}
+            editable={!loading}
+            autoCapitalize="none"
+            placeholder="AL-123456"
+            placeholderTextColor="#777"
           />
 
-          {showVerification ? (
-            <View style={styles.verificationSection}>
-              <View style={styles.dividerLine} />
-              
-              <Text style={styles.verificationHeading}>Identity Verification Required</Text>
-
-              {/* CAPTCHA Challenge */}
-              <Text style={styles.fieldLabel}>Solve Captcha Challenge</Text>
-              <View style={styles.captchaRow}>
-                <View style={styles.captchaDisplay}>
-                  <Text style={styles.captchaText}>{captchaChallenge}</Text>
-                </View>
-                <TouchableOpacity style={styles.refreshBtn} onPress={generateCaptchaAndOtp}>
-                  <RefreshCw size={14} color="#64748B" />
-                </TouchableOpacity>
-                <TextInput
-                  style={[styles.input, { flex: 1, marginBottom: 0 }]}
-                  placeholder="Result"
-                  placeholderTextColor="#94A3B8"
-                  keyboardType="number-pad"
-                  value={userCaptcha}
-                  onChangeText={setUserCaptcha}
-                />
+          <TouchableOpacity
+            style={styles.lookupButton}
+            onPress={() => handleLookup(email, ticketNumber)}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <View style={styles.buttonRow}>
+                <Search size={16} color="#FFFFFF" />
+                <Text style={styles.lookupButtonText}>Search Ticket</Text>
               </View>
-
-              {/* OTP Code Input */}
-              <Text style={styles.fieldLabel}>One-Time Password (OTP)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter 6-digit OTP code"
-                placeholderTextColor="#94A3B8"
-                keyboardType="number-pad"
-                maxLength={6}
-                value={userOtp}
-                onChangeText={setUserOtp}
-              />
-
-              {/* Simulated Toast Delivery Notice */}
-              <View style={styles.demoOtpBox}>
-                <Key size={14} color="#1E40AF" />
-                <Text style={styles.demoOtpText}>
-                  <Text style={{ fontWeight: '700' }}>SMS OTP Gateway:</Text> A simulated 6-digit OTP code of <Text style={{ fontWeight: '800', textDecorationLine: 'underline' }}>{otpText}</Text> was sent to your phone number: <Text style={{ fontWeight: '700' }}>{pendingTicket ? pendingTicket.phone : 'registered number'}</Text>.
-                </Text>
-              </View>
-
-              <TouchableOpacity style={[styles.btn, styles.btnPrimary]} onPress={handleVerifyAccess}>
-                <View style={styles.btnRow}>
-                  <Lock size={16} color="#FFFFFF" />
-                  <Text style={styles.btnPrimaryText}>Verify & Access Ticket</Text>
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={[styles.btn, styles.btnSecondary, { marginTop: 12 }]} onPress={() => { setShowVerification(false); setVerificationError(''); }}>
-                <Text style={styles.btnSecondaryText}>Change Ticket Info</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <TouchableOpacity style={[styles.btn, styles.btnPrimary]} onPress={() => handleLookup(email, ticketNumber)} disabled={loading}>
-              {loading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <View style={styles.btnRow}>
-                  <Text style={styles.btnPrimaryText}>Request Verification OTP</Text>
-                  <Search size={16} color="#FFFFFF" />
-                </View>
-              )}
-            </TouchableOpacity>
-          )}
+            )}
+          </TouchableOpacity>
         </View>
       </ScrollView>
     );
   }
 
-  // VIEW 3: TICKET DETAILS & CONVERSATION
   return (
-    <KeyboardAvoidingView 
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
-    >
-      <View style={styles.actionHeader}>
-        <TouchableOpacity style={styles.miniBtn} onPress={handleClearCredentials}>
-          <ArrowLeft size={14} color="#475569" />
-          <Text style={styles.miniBtnText}>Back to Search</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.miniBtn} onPress={() => handleLookup(ticket.email, ticket.ticket_number, true)} disabled={loading}>
-          <RefreshCw size={12} color="#1E40AF" />
-          <Text style={[styles.miniBtnText, { color: '#1E40AF' }]}>Refresh</Text>
-        </TouchableOpacity>
-      </View>
+  <KeyboardAvoidingView
+    style={styles.screen}
+    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+  >
+    <View style={[styles.container, styles.detailContainer]}>
+        <View style={styles.topActions}>
+          <TouchableOpacity style={styles.smallButton} onPress={handleBack}>
+            <ArrowLeft size={14} color="#333" />
+            <Text style={styles.smallButtonText}>Back</Text>
+          </TouchableOpacity>
 
-      <ScrollView style={styles.container} contentContainerStyle={[styles.contentContainer, { paddingTop: 4 }]}>
-        {error ? (
-          <View style={[styles.errorBox, { marginBottom: 12 }]}>
-            <Text style={styles.errorText}>{error}</Text>
+          <View style={styles.rightActions}>
+            <TouchableOpacity style={styles.smallButton} onPress={() => handleLookup(ticket.email, ticket.ticket_number)}>
+              <RefreshCw size={13} color="#333" />
+              <Text style={styles.smallButtonText}>Refresh</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.smallButton}>
+              <Printer size={13} color="#333" />
+              <Text style={styles.smallButtonText}>Print</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.smallButton}>
+              <Edit3 size={13} color="#333" />
+              <Text style={styles.smallButtonText}>Edit</Text>
+            </TouchableOpacity>
           </View>
-        ) : null}
+        </View>
 
-        {replySuccess ? (
-          <View style={[styles.successBox, { marginBottom: 12 }]}>
-            <Text style={styles.successText}>Reply posted successfully!</Text>
-          </View>
-        ) : null}
+        <View style={styles.ticketHeadingRow}>
+          <RefreshCw size={20} color="#5B8F22" />
+          <Text style={styles.ticketHeading}>
+            {ticket.help_topic_name || 'Support Ticket'} #{ticket.ticket_number}
+          </Text>
+        </View>
 
-        {/* Ticket Header card */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.ticketNumText}>{ticket.ticket_number}</Text>
-            <View style={styles.badgeRow}>
-              <View style={[styles.badge, getPriorityStyle(ticket.priority)]}>
-                <Text style={styles.badgeText}>{ticket.priority}</Text>
-              </View>
-              <View style={[styles.badge, getStatusStyle(ticket.status)]}>
-                <Text style={styles.badgeText}>{ticket.status}</Text>
-              </View>
+        <View style={styles.dottedLine} />
+
+        <View style={styles.infoGrid}>
+          <View style={styles.infoColumn}>
+            <Text style={styles.sectionTitle}>Basic Ticket Information</Text>
+
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Ticket Status:</Text>
+              <Text style={styles.infoValue}>{ticket.status}</Text>
+            </View>
+
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Department:</Text>
+              <Text style={styles.infoValue}>{ticket.priority || 'L1 Leykart'}</Text>
+            </View>
+
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Create Date:</Text>
+              <Text style={styles.infoValue}>{formatDateTime(ticket.created_at)}</Text>
             </View>
           </View>
 
-          <Text style={styles.ticketSubject}>{ticket.help_topic_name || 'Support Ticket'}</Text>
+          <View style={styles.infoColumn}>
+            <Text style={styles.sectionTitle}>User Information</Text>
 
-          <View style={styles.detailsBox}>
-            <View style={styles.detailsColumn}>
-              <View style={styles.detailsHeader}>
-                <User size={12} color="#1E40AF" />
-                <Text style={styles.detailsHeaderText}>Owner</Text>
-              </View>
-              <Text style={styles.detailsVal}>{ticket.name}</Text>
-              <Text style={styles.detailsSub}>{ticket.phone}</Text>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Name:</Text>
+              <Text style={styles.infoValue}>{ticket.name}</Text>
+            </View>
+
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Email:</Text>
+              <Text style={styles.infoValue}>{ticket.email}</Text>
+            </View>
+
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Phone:</Text>
+              <Text style={styles.infoValue}>{ticket.phone}</Text>
             </View>
           </View>
         </View>
 
-        {/* Timeline updates */}
-        <Text style={styles.timelineHeading}>
-          <MessageSquare size={16} color="#0F172A" /> Updates & Conversation
-        </Text>
-
-        {replies.length === 0 ? (
-          <View style={styles.emptyTimeline}>
-            <Text style={styles.emptyTimelineText}>No messages logged yet. Use the response box below to contact support.</Text>
+        <View style={styles.sectionBlock}>
+          <Text style={styles.sectionTitleUpper}>MARKET INTELLIGENCE</Text>
+          <View style={styles.fullInfoRow}>
+            <Text style={styles.fullInfoLabel}>Ticket Type:</Text>
+            <Text style={styles.fullInfoValue}>
+              {ticket.help_topic_name || 'Access control - Roles & Authorizations'}
+            </Text>
           </View>
-        ) : (
-          <View style={styles.timelineContainer}>
-            {replies.map((reply, idx) => (
-              <View key={reply.id || idx} style={styles.timelineItem}>
-                <View style={[
-                  styles.timelineMarker, 
-                  reply.sender === 'Staff' ? styles.markerStaff : styles.markerClient
-                ]} />
-                
-                <View style={styles.timelineContent}>
-                  <View style={styles.timelineMeta}>
-                    <Text style={[
-                      styles.timelineSender, 
-                      reply.sender === 'Staff' ? styles.senderStaff : styles.senderClient
-                    ]}>
-                      {reply.sender === 'Staff' ? 'Support Engineer' : reply.name}
-                    </Text>
-                    <Text style={styles.timelineTime}>{formatDate(reply.created_at)}</Text>
-                  </View>
-                  <Text style={styles.timelineBody}>{reply.message}</Text>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
-      </ScrollView>
+        </View>
 
-      {/* Reply Post input at bottom */}
-      {ticket.status !== 'Closed' && ticket.status !== 'Resolved' ? (
-        <View style={styles.replyBoxContainer}>
+        <View style={styles.sectionBlock}>
+          <Text style={styles.sectionTitleUpper}>MARKET INTELLIGENCE</Text>
+          <View style={styles.fullInfoRow}>
+            <Text style={styles.fullInfoLabel}>Subcategories:</Text>
+            <Text style={styles.fullInfoValue}>Login</Text>
+          </View>
+        </View>
+
+        <View style={styles.messagePanel}>
+          <View style={styles.messageHeader}>
+            <Text style={styles.messageHeaderText}>
+              {ticket.name} posted {formatDateTime(ticket.created_at)}
+            </Text>
+          </View>
+
+          <Text style={styles.messageBody}>
+            {replies[0]?.message || ticket.help_topic_name || 'Ticket created.'}
+          </Text>
+        </View>
+
+        <View style={styles.timelineLine}>
+          <Text style={styles.timelineText}>
+            Created by <Text style={styles.bold}>{ticket.name}</Text> {formatDateTime(ticket.created_at)}
+          </Text>
+        </View>
+
+        <Text style={styles.replyTitle}>Post Reply</Text>
+
+        <View style={styles.replyBox}>
           <TextInput
             style={styles.replyInput}
-            placeholder="Type your message to support team..."
-            placeholderTextColor="#94A3B8"
-            multiline={true}
             value={newReply}
             onChangeText={setNewReply}
-            disabled={submittingReply}
+            multiline
+            placeholder="Type your reply..."
+            placeholderTextColor="#777"
+            editable={!submittingReply}
           />
-          <TouchableOpacity 
-            style={[styles.sendBtn, !newReply.trim() && styles.sendBtnDisabled]} 
+
+          <TouchableOpacity
+            style={[styles.sendButton, !newReply.trim() && styles.sendButtonDisabled]}
             onPress={handlePostReply}
             disabled={submittingReply || !newReply.trim()}
           >
@@ -472,453 +338,314 @@ export default function TrackTicket({ setView, trackCredentials, setTrackCredent
             )}
           </TouchableOpacity>
         </View>
-      ) : (
-        <View style={styles.closedInfoBox}>
-          <Text style={styles.closedInfoText}>This ticket is marked as {ticket.status}. Replies are locked.</Text>
-        </View>
-      )}
+
+        <Text style={styles.replyTitle}>Conversation</Text>
+
+        {repliesLoading ? (
+          <ActivityIndicator size="small" color="#2F6F91" style={{ marginVertical: 16 }} />
+        ) : replies.length === 0 ? (
+          <Text style={styles.emptyReplies}>No replies yet.</Text>
+        ) : (
+          replies.map(reply => (
+            <View key={reply.id} style={styles.replyItem}>
+              <View style={styles.replyItemHeader}>
+                <Text style={styles.replySender}>
+                  {reply.sender === 'Staff' ? 'Support Team' : reply.name}
+                </Text>
+                <Text style={styles.replyDate}>{formatDateTime(reply.created_at)}</Text>
+              </View>
+              <Text style={styles.replyMessage}>{reply.message}</Text>
+            </View>
+          ))
+        )}
+      </View>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+  },
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F4F4F4',
   },
-  contentContainer: {
-    padding: 16,
-    paddingBottom: 40,
+  lookupContainer: {
+    padding: 18,
   },
-  card: {
+  lookupBox: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 20,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#0F172A',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
+    borderColor: '#C8C8C8',
+    padding: 18,
   },
   backLink: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 16,
+    marginBottom: 14,
   },
   backLinkText: {
-    fontSize: 13,
-    color: '#1E40AF',
+    color: '#2F6F91',
     fontWeight: '700',
   },
-  title: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#0F172A',
+  lookupTitle: {
+    fontSize: 24,
+    color: '#2F6F91',
     marginBottom: 6,
   },
-  subtitle: {
+  lookupSubtitle: {
+    fontSize: 14,
+    color: '#333',
+    marginBottom: 18,
+  },
+  formLabel: {
     fontSize: 13,
-    color: '#475569',
-    lineHeight: 18,
-    marginBottom: 20,
+    fontWeight: '700',
+    color: '#333',
+    marginBottom: 6,
+  },
+  input: {
+    height: 36,
+    borderWidth: 1,
+    borderColor: '#888',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    marginBottom: 14,
+    color: '#111',
+  },
+  disabledInput: {
+    backgroundColor: '#F0F0F0',
+    color: '#666',
+  },
+  lookupButton: {
+    height: 38,
+    backgroundColor: '#2F6F91',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    alignSelf: 'flex-start',
+  },
+  lookupButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  detailContainer: {
+    padding: 12,
+    paddingBottom: 8,
+  },
+  topActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  rightActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  smallButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#AAA',
+    backgroundColor: '#EFEFEF',
+    paddingHorizontal: 8,
+    height: 28,
+  },
+  smallButtonText: {
+    fontSize: 12,
+    color: '#333',
   },
   errorBox: {
     backgroundColor: '#FEE2E2',
     borderLeftWidth: 4,
     borderLeftColor: '#EF4444',
-    padding: 12,
-    borderRadius: 6,
-    marginBottom: 16,
+    padding: 10,
+    marginBottom: 12,
   },
   errorText: {
     color: '#B91C1C',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  successBox: {
-    backgroundColor: '#D1FAE5',
-    borderLeftWidth: 4,
-    borderLeftColor: '#10B981',
-    padding: 12,
-    borderRadius: 6,
-    marginBottom: 16,
-  },
-  successText: {
-    color: '#065F46',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  fieldLabel: {
-    fontSize: 11,
     fontWeight: '700',
-    color: '#475569',
-    textTransform: 'uppercase',
-    marginBottom: 6,
-    marginTop: 10,
+    fontSize: 13,
   },
-  input: {
-    backgroundColor: '#FAFCFF',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: Platform.OS === 'ios' ? 12 : 8,
-    fontSize: 14,
-    color: '#0F172A',
-    marginBottom: 16,
-  },
-  disabledInput: {
-    backgroundColor: '#F1F5F9',
-    color: '#64748B',
-    borderColor: '#E2E8F0',
-  },
-  dividerLine: {
-    height: 1,
-    backgroundColor: '#E2E8F0',
-    marginVertical: 20,
-  },
-  verificationHeading: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#1E40AF',
+  ticketHeadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
     marginBottom: 10,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
   },
-  btnSecondary: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    height: 44,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
+  ticketHeading: {
+    fontSize: 18,
+    color: '#2F6F91',
+    fontWeight: '500',
   },
-  btnSecondaryText: {
-    color: '#475569',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  btn: {
-    height: 44,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 8,
-  },
-  btnPrimary: {
-    backgroundColor: '#1E40AF',
-  },
-  btnPrimaryText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  btnRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  actionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: '#F8FAFC',
-  },
-  miniBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 6,
-  },
-  miniBtnText: {
-    fontSize: 11,
-    color: '#475569',
-    fontWeight: '700',
-  },
-  cardHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  dottedLine: {
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    paddingBottom: 10,
+    borderStyle: 'dotted',
+    borderColor: '#AAA',
+    marginBottom: 14,
+  },
+  infoGrid: {
+    flexDirection: 'row',
+    gap: 24,
+    marginBottom: 8,
+  },
+  infoColumn: {
+    flex: 1,
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#111',
+    borderBottomWidth: 1,
+    borderBottomColor: '#777',
+    paddingBottom: 5,
+    marginBottom: 8,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  infoLabel: {
+    width: 120,
+    fontSize: 14,
+    color: '#333',
+  },
+  infoValue: {
+    flex: 1,
+    fontSize: 14,
+    color: '#111',
+  },
+  sectionBlock: {
+    borderTopWidth: 1,
+    borderTopColor: '#999',
+    paddingTop: 6,
+    marginBottom: 8,
+  },
+  sectionTitleUpper: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#111',
     marginBottom: 10,
   },
-  ticketNumText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#64748B',
-  },
-  badgeRow: {
+  fullInfoRow: {
     flexDirection: 'row',
-    gap: 6,
   },
-  badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 20,
+  fullInfoLabel: {
+    width: 180,
+    fontSize: 14,
+    color: '#333',
+  },
+  fullInfoValue: {
+    flex: 1,
+    fontSize: 14,
+    color: '#111',
+    fontWeight: '600',
+  },
+  messagePanel: {
     borderWidth: 1,
+    borderColor: '#9CA3AF',
+    backgroundColor: '#FFFFFF',
+    marginBottom: 8,
   },
-  badgeText: {
-    fontSize: 9,
+  messageHeader: {
+    backgroundColor: '#BFD0E3',
+    padding: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#9CA3AF',
+  },
+  messageHeaderText: {
     fontWeight: '800',
-    textTransform: 'uppercase',
+    color: '#111',
   },
-  badgeGray: { backgroundColor: '#F1F5F9', borderColor: '#CBD5E1', color: '#475569' },
-  badgeYellow: { backgroundColor: '#FEF3C7', borderColor: '#FDE68A', color: '#D97706' },
-  badgeOrange: { backgroundColor: '#FFE4E6', borderColor: '#FECDD3', color: '#E11D48' },
-  badgeRed: { backgroundColor: '#FEE2E2', borderColor: '#FCA5A5', color: '#DC2626' },
-  badgeBlue: { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE', color: '#1E40AF' },
-  badgeGreen: { backgroundColor: '#D1FAE5', borderColor: '#A7F3D0', color: '#047857' },
-  ticketSubject: {
+  messageBody: {
+    padding: 10,
+    minHeight: 34,
+    color: '#111',
+  },
+  timelineLine: {
+    borderTopWidth: 1,
+    borderTopColor: '#DDD',
+    paddingTop: 8,
+    marginBottom: 8,
+    alignItems: 'center',
+  },
+  timelineText: {
+    fontSize: 14,
+    color: '#333',
+  },
+  bold: {
+    fontWeight: '800',
+  },
+  replyTitle: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#0F172A',
-    marginBottom: 10,
+    color: '#111',
+    marginBottom: 8,
   },
-  descRow: {
+  replyBox: {
     flexDirection: 'row',
+    alignItems: 'flex-end',
     gap: 8,
-    alignItems: 'flex-start',
-    marginBottom: 16,
-  },
-  descIcon: {
-    marginTop: 2,
-    flexShrink: 0,
-  },
-  descText: {
-    fontSize: 13,
-    color: '#334155',
-    lineHeight: 18,
-    flex: 1,
-  },
-  detailsBox: {
-    backgroundColor: '#FAFCFF',
-    borderWidth: 1,
-    borderColor: '#EBF5FF',
-    borderRadius: 10,
-    padding: 12,
-    flexDirection: 'row',
-    gap: 16,
-  },
-  detailsColumn: {
-    flex: 1,
-  },
-  detailsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginBottom: 4,
-  },
-  detailsHeaderText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#1E40AF',
-    textTransform: 'uppercase',
-  },
-  detailsVal: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  detailsSub: {
-    fontSize: 10,
-    color: '#64748B',
-    marginTop: 1,
-  },
-  timelineHeading: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#0F172A',
-    marginTop: 24,
-    marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  emptyTimeline: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    padding: 24,
-    alignItems: 'center',
-  },
-  emptyTimelineText: {
-    fontSize: 12,
-    color: '#94A3B8',
-    textAlign: 'center',
-    lineHeight: 16,
-  },
-  timelineContainer: {
-    flexDirection: 'column',
-    paddingLeft: 14,
-  },
-  timelineItem: {
-    position: 'relative',
-    paddingLeft: 20,
-    paddingBottom: 20,
-    borderLeftWidth: 2,
-    borderLeftColor: '#E2E8F0',
-  },
-  timelineMarker: {
-    position: 'absolute',
-    left: -7,
-    top: 6,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    borderWidth: 3,
-    backgroundColor: '#FFFFFF',
-    zIndex: 2,
-  },
-  markerStaff: { borderColor: '#3B82F6', backgroundColor: '#3B82F6' },
-  markerClient: { borderColor: '#1E40AF', backgroundColor: '#1E40AF' },
-  timelineContent: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 12,
-  },
-  timelineMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F8FAFC',
-    paddingBottom: 4,
-  },
-  timelineSender: {
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  senderStaff: { color: '#3B82F6' },
-  senderClient: { color: '#1E40AF' },
-  timelineTime: {
-    fontSize: 10,
-    color: '#94A3B8',
-  },
-  timelineBody: {
-    fontSize: 13,
-    color: '#0F172A',
-    lineHeight: 18,
-  },
-  replyBoxContainer: {
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    marginBottom: 18,
   },
   replyInput: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    minHeight: 46,
+    maxHeight: 120,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: Platform.OS === 'ios' ? 8 : 4,
-    fontSize: 13,
-    color: '#0F172A',
-    maxHeight: 80,
+    borderColor: '#AAA',
+    backgroundColor: '#FFFFFF',
+    padding: 10,
+    textAlignVertical: 'top',
+    color: '#111',
   },
-  sendBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#1E40AF',
+  sendButton: {
+    width: 42,
+    height: 42,
+    backgroundColor: '#2F6F91',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sendBtnDisabled: {
-    backgroundColor: '#CBD5E1',
+  sendButtonDisabled: {
+    backgroundColor: '#AAA',
   },
-  closedInfoBox: {
-    backgroundColor: '#F1F5F9',
-    paddingVertical: 14,
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-  },
-  closedInfoText: {
-    fontSize: 12,
-    color: '#475569',
-    fontWeight: '700',
-  },
-  securityHeader: {
-    alignItems: 'center',
+  emptyReplies: {
+    color: '#666',
     marginBottom: 20,
   },
-  captchaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 16,
-  },
-  captchaDisplay: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
+  replyItem: {
     borderWidth: 1,
-    borderColor: '#CBD5E1',
-    minWidth: 100,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  captchaText: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#475569',
-    letterSpacing: 1.5,
-    fontStyle: 'italic',
-  },
-  refreshBtn: {
+    borderColor: '#C8C8C8',
     backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    width: 38,
-    height: 38,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
+    marginBottom: 10,
   },
-  demoOtpBox: {
+  replyItemHeader: {
+    backgroundColor: '#E9EEF0',
+    borderBottomWidth: 1,
+    borderBottomColor: '#C8C8C8',
+    padding: 8,
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EFF6FF',
-    padding: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    gap: 8,
-    marginBottom: 16,
+    justifyContent: 'space-between',
   },
-  demoOtpText: {
-    fontSize: 11,
-    color: '#1E40AF',
-    flex: 1,
-    lineHeight: 15,
+  replySender: {
+    fontWeight: '800',
+    color: '#111',
+  },
+  replyDate: {
+    color: '#555',
+    fontSize: 12,
+  },
+  replyMessage: {
+    padding: 10,
+    color: '#111',
+    lineHeight: 20,
   },
 });

@@ -11,15 +11,13 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { FileText, Plus } from 'lucide-react-native';
+import { FileText, Plus, Search } from 'lucide-react-native';
 
-// Import screens
 import SubmitTicket from './pages/SubmitTicket';
 import TrackTicket from './pages/TrackTicket';
 import UserDashboard from './pages/UserDashboard';
 import UserLogin from './pages/UserLogin';
 
-// Smooth Fade + Slide-Up page transition
 function FadeInView({ children, viewKey }) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(12)).current;
@@ -70,10 +68,12 @@ export default function App() {
 
   const renderScreen = () => {
     let screen;
+
     switch (currentView) {
       case 'user-login':
         screen = <UserLogin onLoginSuccess={handleUserLoginSuccess} />;
         break;
+
       case 'submit-ticket':
         screen = (
           <SubmitTicket
@@ -85,6 +85,7 @@ export default function App() {
           />
         );
         break;
+
       case 'track-ticket':
         screen = (
           <TrackTicket
@@ -95,9 +96,11 @@ export default function App() {
           />
         );
         break;
+
       case 'user-dashboard':
         screen = <UserDashboard setView={setView} userEmail={userEmail} />;
         break;
+
       default:
         screen = isUserAuthenticated
           ? <UserDashboard setView={setView} userEmail={userEmail} />
@@ -116,7 +119,6 @@ export default function App() {
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-        {/* ── Fixed Header ── */}
         <View style={[styles.header, isWide && styles.headerWide]}>
           <View style={styles.headerInner}>
             <TouchableOpacity
@@ -144,7 +146,6 @@ export default function App() {
           </View>
         </View>
 
-        {/* ── Fixed Nav Bar (only when authenticated) ── */}
         {isUserAuthenticated && (
           <View style={[styles.navBarOuter, isWide && styles.navBarWide]}>
             <View style={styles.navigationBar}>
@@ -158,7 +159,7 @@ export default function App() {
                   style={styles.navIcon}
                 />
                 <Text style={[styles.navLabel, currentView === 'user-dashboard' && styles.navLabelActive]}>
-                  My Tickets
+                  View Ticket
                 </Text>
               </TouchableOpacity>
 
@@ -175,16 +176,28 @@ export default function App() {
                   New Ticket
                 </Text>
               </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.navTab, currentView === 'track-ticket' && styles.navTabActive]}
+                onPress={() => setView('track-ticket')}
+              >
+                <Search
+                  size={14}
+                  color={currentView === 'track-ticket' ? '#2563EB' : '#475569'}
+                  style={styles.navIcon}
+                />
+                <Text style={[styles.navLabel, currentView === 'track-ticket' && styles.navLabelActive]}>
+                  Ticket Status
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         )}
 
-        {/* ── Main Content Area (flex: 1 → fills remaining space) ── */}
         <View style={[styles.mainContainer, isWide && styles.mainContainerWide]}>
           {renderScreen()}
         </View>
 
-        {/* ── Fixed Footer ── */}
         <View style={styles.footer}>
           <Text style={styles.footerText}>
             © 2026 Support Center · All rights reserved.
@@ -200,8 +213,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
-
-  // ── Header ──
   header: {
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
@@ -209,8 +220,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3 },
-      android: { elevation: 2 },
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 2,
+      },
     }),
   },
   headerWide: {
@@ -263,8 +281,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textDecorationLine: 'underline',
   },
-
-  // ── Nav Bar ──
   navBarOuter: {
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
@@ -299,8 +315,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 2 },
-      android: { elevation: 1 },
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.06,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 1,
+      },
     }),
   },
   navIcon: {
@@ -315,29 +338,23 @@ const styles = StyleSheet.create({
     color: '#2563EB',
     fontWeight: '700',
   },
-
-  // ── Main Content ── (THIS IS THE KEY FIX: flex: 1 in a View, not ScrollView)
   mainContainer: {
     flex: 1,
     backgroundColor: '#F1F5F9',
     overflow: 'hidden',
   },
-  mainContainerWide: {
-    // On wide screens, constrain content width but keep full height
-  },
-
-  // ── Footer ──
+  mainContainerWide: {},
   footer: {
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-  },
-  footerText: {
-    fontSize: 11,
-    color: '#94A3B8',
-    textAlign: 'center',
-  },
+  backgroundColor: '#FFFFFF',
+  borderTopWidth: 1,
+  borderTopColor: '#E2E8F0',
+  paddingVertical: 3,
+  paddingHorizontal: 16,
+  alignItems: 'center',
+},
+footerText: {
+  fontSize: 9,
+  color: '#94A3B8',
+  textAlign: 'center',
+},
 });

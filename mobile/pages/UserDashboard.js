@@ -11,7 +11,6 @@ import {
   Platform,
   Alert,
   Modal,
-  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Picker } from '@react-native-picker/picker';
@@ -19,19 +18,15 @@ import { RefreshCw, X, MessageSquare, Send, Check, AlertCircle, User } from 'luc
 import { API_BASE_URL, fetchWithTimeout } from '../config';
 
 export default function UserDashboard({ setView, userEmail }) {
-  const { width } = useWindowDimensions();
-  const isWide = width >= 640;
-
   const [tickets, setTickets] = useState([]);
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [replies, setReplies] = useState([]);
   const [newReply, setNewReply] = useState('');
 
-  // Filters
   const [statusFilter, setStatusFilter] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
+  const [searchText, setSearchText] = useState('');
 
-  // Loaders & states
   const [loading, setLoading] = useState(false);
   const [repliesLoading, setRepliesLoading] = useState(false);
   const [submittingReply, setSubmittingReply] = useState(false);
@@ -39,7 +34,6 @@ export default function UserDashboard({ setView, userEmail }) {
   const [statusSuccess, setStatusSuccess] = useState(false);
   const [error, setError] = useState('');
 
-  // Load tickets on mount & when filters change
   useEffect(() => {
     fetchTickets();
   }, [statusFilter, priorityFilter]);
@@ -48,10 +42,10 @@ export default function UserDashboard({ setView, userEmail }) {
     setLoading(true);
     setError('');
 
-    // Fetch ALL tickets — no email filter
     const params = new URLSearchParams();
     if (statusFilter) params.append('status', statusFilter);
     if (priorityFilter) params.append('priority', priorityFilter);
+    if (searchText.trim()) params.append('search', searchText.trim());
 
     const url = `${API_BASE_URL}/api/staff/tickets?${params.toString()}`;
 
@@ -72,6 +66,7 @@ export default function UserDashboard({ setView, userEmail }) {
     setSelectedTicket(ticket);
     setReplies([]);
     setRepliesLoading(true);
+
     try {
       const response = await fetchWithTimeout(`${API_BASE_URL}/api/tickets/${ticket.id}/replies`);
       if (!response.ok) throw new Error('Failed to load replies');
@@ -86,8 +81,10 @@ export default function UserDashboard({ setView, userEmail }) {
 
   const handleStatusChange = async (newStatus) => {
     if (!selectedTicket || !newStatus || newStatus === selectedTicket.status) return;
+
     setUpdatingStatus(true);
     setStatusSuccess(false);
+
     try {
       const response = await fetchWithTimeout(
         `${API_BASE_URL}/api/staff/tickets/${selectedTicket.id}/status`,
@@ -97,12 +94,15 @@ export default function UserDashboard({ setView, userEmail }) {
           body: JSON.stringify({ status: newStatus }),
         }
       );
+
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to update status');
+
       setSelectedTicket(prev => ({ ...prev, status: newStatus }));
       setTickets(prev =>
         prev.map(t => (t.id === selectedTicket.id ? { ...t, status: newStatus } : t))
       );
+
       setStatusSuccess(true);
       setTimeout(() => setStatusSuccess(false), 2000);
     } catch (err) {
@@ -114,7 +114,9 @@ export default function UserDashboard({ setView, userEmail }) {
 
   const handlePostReply = async () => {
     if (!newReply.trim() || !selectedTicket) return;
+
     setSubmittingReply(true);
+
     try {
       const response = await fetchWithTimeout(
         `${API_BASE_URL}/api/tickets/${selectedTicket.id}/replies`,
@@ -128,8 +130,10 @@ export default function UserDashboard({ setView, userEmail }) {
           }),
         }
       );
+
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to post reply');
+
       setReplies(prev => [...prev, data]);
       setNewReply('');
     } catch (err) {
@@ -140,80 +144,61 @@ export default function UserDashboard({ setView, userEmail }) {
   };
 
   const formatDate = (dateString) =>
-    new Date(dateString).toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: 'short',
-    });
+    new Date(dateString).toLocaleDateString('en-GB');
 
-  const getPriorityStyle = (priority) => {
-    switch (priority) {
-      case 'Emergency': return styles.badgeRed;
-      case 'High':      return styles.badgeOrange;
-      case 'Medium':    return styles.badgeYellow;
-      default:          return styles.badgeGray;
-    }
-  };
-
-  const getStatusStyle = (status) => {
-    switch (status) {
-      case 'Resolved':    return styles.badgeGreen;
-      case 'In Progress': return styles.badgeYellow;
-      case 'Closed':      return styles.badgeGray;
-      default:            return styles.badgeBlue;
-    }
-  };
+  const openCount = tickets.filter(t => t.status === 'Open').length;
+  const closedCount = tickets.filter(t => t.status === 'Closed').length;
 
   return (
     <View style={styles.container}>
-      {/* ── Filter / Header Bar ── */}
-      <View style={styles.filterBar}>
-        <View style={styles.filterHeader}>
-          <View>
-            <Text style={styles.title}>All Tickets</Text>
-            <Text style={styles.emailHint}>{tickets.length} ticket{tickets.length !== 1 ? 's' : ''} total</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.refreshBtn}
-            onPress={fetchTickets}
-            disabled={loading}
-          >
-            <RefreshCw size={14} color="#1E40AF" />
+      <View style={styles.ticketToolbar}>
+        <View style={styles.searchRow}>
+          <TextInput
+            style={styles.searchInput}
+            value={searchText}
+            onChangeText={setSearchText}
+            onSubmitEditing={fetchTickets}
+          />
+
+          <TouchableOpacity style={styles.searchButton} onPress={fetchTickets}>
+            <Text style={styles.searchButtonText}>Search</Text>
           </TouchableOpacity>
-        </View>
 
-        {/* Filter Pickers */}
-        <View style={styles.pickerRow}>
-          <View style={styles.pickerWrapper}>
-            <Picker
-              selectedValue={statusFilter}
-              style={styles.picker}
-              onValueChange={setStatusFilter}
-            >
-              <Picker.Item label="All Statuses" value="" />
-              <Picker.Item label="Open"        value="Open" />
-              <Picker.Item label="In Progress" value="In Progress" />
-              <Picker.Item label="Resolved"    value="Resolved" />
-              <Picker.Item label="Closed"      value="Closed" />
-            </Picker>
-          </View>
+          <Text style={styles.helpTopicLabel}>Help Topic:</Text>
 
-          <View style={styles.pickerWrapper}>
+          <View style={styles.helpTopicSelect}>
             <Picker
               selectedValue={priorityFilter}
               style={styles.picker}
               onValueChange={setPriorityFilter}
             >
-              <Picker.Item label="All Priorities" value="" />
-              <Picker.Item label="Low"       value="Low" />
-              <Picker.Item label="Medium"    value="Medium" />
-              <Picker.Item label="High"      value="High" />
+              <Picker.Item label="-- All Help Topics --" value="" />
+              <Picker.Item label="Low" value="Low" />
+              <Picker.Item label="Medium" value="Medium" />
+              <Picker.Item label="High" value="High" />
               <Picker.Item label="Emergency" value="Emergency" />
             </Picker>
           </View>
         </View>
+
+        <View style={styles.ticketTitleRow}>
+          <View style={styles.ticketTitleWrap}>
+            <RefreshCw size={20} color="#5B8F22" />
+            <Text style={styles.ticketTitle}>Tickets</Text>
+          </View>
+
+          <View style={styles.statusLinks}>
+            <TouchableOpacity onPress={() => setStatusFilter('Open')}>
+              <Text style={styles.statusLink}>Open ({openCount})</Text>
+            </TouchableOpacity>
+            <Text style={styles.statusSeparator}>|</Text>
+            <TouchableOpacity onPress={() => setStatusFilter('Closed')}>
+              <Text style={styles.statusLink}>Closed ({closedCount})</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
 
-      {/* ── Error Banner ── */}
       {error ? (
         <View style={styles.errorContainer}>
           <AlertCircle size={20} color="#EF4444" />
@@ -224,71 +209,69 @@ export default function UserDashboard({ setView, userEmail }) {
         </View>
       ) : null}
 
-      {/* ── Ticket List ── */}
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#1E40AF" />
-          <Text style={styles.loadingText}>Loading your tickets…</Text>
+          <Text style={styles.loadingText}>Loading tickets...</Text>
         </View>
       ) : (
         <ScrollView
           style={styles.scrollList}
-          contentContainerStyle={[
-            styles.listContent,
-            isWide && styles.listContentWide,
-          ]}
+          contentContainerStyle={styles.listContent}
+          horizontal={true}
           keyboardShouldPersistTaps="handled"
         >
-          {tickets.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyIcon}>📭</Text>
-              <Text style={styles.emptyTitle}>No tickets yet</Text>
-              <Text style={styles.emptyText}>
-                {statusFilter || priorityFilter
-                  ? 'No tickets match the selected filters.'
-                  : 'Submit your first support request using the New Ticket button above.'}
-              </Text>
-              {(statusFilter || priorityFilter) && (
-                <TouchableOpacity
-                  style={styles.clearFiltersBtn}
-                  onPress={() => { setStatusFilter(''); setPriorityFilter(''); }}
-                >
-                  <Text style={styles.clearFiltersText}>Clear Filters</Text>
-                </TouchableOpacity>
-              )}
+          <View style={styles.ticketTable}>
+            <Text style={styles.tableCaption}>
+              Showing 1 - {tickets.length} of {tickets.length} Open Tickets
+            </Text>
+
+            <View style={styles.tableHeader}>
+              <Text style={[styles.th, styles.colTicket]}>Ticket #</Text>
+              <Text style={[styles.th, styles.colDate]}>Create Date</Text>
+              <Text style={[styles.th, styles.colStatus]}>Status</Text>
+              <Text style={[styles.th, styles.colSubject]}>Subject</Text>
+              <Text style={[styles.th, styles.colDepartment]}>Department</Text>
             </View>
-          ) : (
-            <View style={isWide ? styles.gridLayout : undefined}>
-              {tickets.map(ticket => (
+
+            {tickets.length === 0 ? (
+              <View style={styles.emptyTableRow}>
+                <Text style={styles.emptyText}>No tickets found.</Text>
+              </View>
+            ) : (
+              tickets.map(ticket => (
                 <TouchableOpacity
                   key={ticket.id}
-                  style={[styles.ticketCard, isWide && styles.ticketCardWide]}
+                  style={styles.tableRow}
                   onPress={() => handleSelectTicket(ticket)}
                   activeOpacity={0.75}
                 >
-                  <View style={styles.ticketCardHeader}>
-                    <Text style={styles.ticketNum}>{ticket.ticket_number}</Text>
-                    <Text style={styles.ticketDate}>{formatDate(ticket.created_at)}</Text>
-                  </View>
-                  <Text style={styles.ticketSubj} numberOfLines={1}>
+                  <Text style={[styles.tdLink, styles.colTicket]} numberOfLines={1}>
+                    {ticket.ticket_number}
+                  </Text>
+
+                  <Text style={[styles.td, styles.colDate]}>
+                    {formatDate(ticket.created_at)}
+                  </Text>
+
+                  <Text style={[styles.td, styles.colStatus]}>
+                    {ticket.status}
+                  </Text>
+
+                  <Text style={[styles.tdLink, styles.colSubject]} numberOfLines={1}>
                     {ticket.help_topic_name || 'Support Ticket'}
                   </Text>
-                  <View style={styles.badgeRow}>
-                    <View style={[styles.badge, getPriorityStyle(ticket.priority)]}>
-                      <Text style={styles.badgeText}>{ticket.priority}</Text>
-                    </View>
-                    <View style={[styles.badge, getStatusStyle(ticket.status)]}>
-                      <Text style={styles.badgeText}>{ticket.status}</Text>
-                    </View>
-                  </View>
+
+                  <Text style={[styles.td, styles.colDepartment]} numberOfLines={1}>
+                    {ticket.priority || 'L1 Leykart'}
+                  </Text>
                 </TouchableOpacity>
-              ))}
-            </View>
-          )}
+              ))
+            )}
+          </View>
         </ScrollView>
       )}
 
-      {/* ── Ticket Detail Modal ── */}
       <Modal
         visible={!!selectedTicket}
         animationType="slide"
@@ -296,16 +279,16 @@ export default function UserDashboard({ setView, userEmail }) {
       >
         {selectedTicket && (
           <SafeAreaView style={styles.modalContainer}>
-            {/* Modal Header */}
             <View style={styles.modalHeader}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.modalMeta}>
-                  {selectedTicket.ticket_number} · {selectedTicket.help_topic_name}
+                  {selectedTicket.ticket_number} - {selectedTicket.help_topic_name}
                 </Text>
                 <Text style={styles.modalTitle} numberOfLines={1}>
                   {selectedTicket.name}
                 </Text>
               </View>
+
               <TouchableOpacity
                 style={styles.closeBtn}
                 onPress={() => setSelectedTicket(null)}
@@ -324,9 +307,9 @@ export default function UserDashboard({ setView, userEmail }) {
                 contentContainerStyle={styles.modalScrollContent}
                 keyboardShouldPersistTaps="handled"
               >
-                {/* Status Row */}
                 <View style={styles.manageBox}>
                   <Text style={styles.manageLabel}>Status:</Text>
+
                   <View style={styles.statusPickerWrapper}>
                     <Picker
                       selectedValue={selectedTicket.status}
@@ -334,17 +317,17 @@ export default function UserDashboard({ setView, userEmail }) {
                       onValueChange={handleStatusChange}
                       enabled={!updatingStatus}
                     >
-                      <Picker.Item label="Open"        value="Open" />
+                      <Picker.Item label="Open" value="Open" />
                       <Picker.Item label="In Progress" value="In Progress" />
-                      <Picker.Item label="Resolved"    value="Resolved" />
-                      <Picker.Item label="Closed"      value="Closed" />
+                      <Picker.Item label="Resolved" value="Resolved" />
+                      <Picker.Item label="Closed" value="Closed" />
                     </Picker>
                   </View>
+
                   {updatingStatus && <ActivityIndicator size="small" color="#1E40AF" />}
                   {statusSuccess && <Check size={16} color="#10B981" />}
                 </View>
 
-                {/* Customer Info */}
                 <View style={styles.summaryCard}>
                   <View style={styles.summaryRow}>
                     <User size={14} color="#1E40AF" />
@@ -352,13 +335,12 @@ export default function UserDashboard({ setView, userEmail }) {
                       <Text style={styles.summaryHeader}>Customer</Text>
                       <Text style={styles.summaryVal}>{selectedTicket.name}</Text>
                       <Text style={styles.summarySub}>
-                        {selectedTicket.email} · {selectedTicket.phone}
+                        {selectedTicket.email} - {selectedTicket.phone}
                       </Text>
                     </View>
                   </View>
                 </View>
 
-                {/* Conversation */}
                 <Text style={styles.timelineHeader}>
                   <MessageSquare size={14} color="#0F172A" /> Conversation ({replies.length})
                 </Text>
@@ -394,10 +376,12 @@ export default function UserDashboard({ setView, userEmail }) {
                           >
                             {reply.sender === 'Staff' ? 'Support Team' : reply.name}
                           </Text>
+
                           <Text style={styles.replyDate}>
                             {formatDate(reply.created_at)}
                           </Text>
                         </View>
+
                         <Text style={styles.replyMsg}>{reply.message}</Text>
                       </View>
                     ))}
@@ -405,7 +389,6 @@ export default function UserDashboard({ setView, userEmail }) {
                 )}
               </ScrollView>
 
-              {/* Reply Box */}
               <View style={styles.replyBox}>
                 <TextInput
                   style={styles.replyInput}
@@ -416,6 +399,7 @@ export default function UserDashboard({ setView, userEmail }) {
                   onChangeText={setNewReply}
                   editable={!submittingReply}
                 />
+
                 <TouchableOpacity
                   style={[
                     styles.sendBtn,
@@ -442,59 +426,50 @@ export default function UserDashboard({ setView, userEmail }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#F4F4F4',
   },
-
-  // ── Filter Bar ──
-  filterBar: {
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    padding: 16,
-    gap: 12,
-    ...Platform.select({
-      ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4 },
-      android: { elevation: 2 },
-    }),
+  ticketToolbar: {
+    backgroundColor: '#F4F4F4',
+    padding: 14,
   },
-  filterHeader: {
+  searchRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#0F172A',
-    letterSpacing: -0.3,
-  },
-  emailHint: {
-    fontSize: 11,
-    color: '#94A3B8',
-    marginTop: 2,
-    fontWeight: '500',
-  },
-  refreshBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#F8FAFC',
     alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  searchInput: {
+    width: 320,
+    height: 30,
+    borderWidth: 1,
+    borderColor: '#555',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 8,
+    color: '#111',
+  },
+  searchButton: {
+    height: 30,
+    borderWidth: 1,
+    borderColor: '#777',
+    backgroundColor: '#EFEFEF',
+    paddingHorizontal: 14,
     justifyContent: 'center',
   },
-  pickerRow: {
-    flexDirection: 'row',
-    gap: 10,
+  searchButtonText: {
+    fontSize: 13,
+    color: '#111',
   },
-  pickerWrapper: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    borderRadius: 8,
-    overflow: 'hidden',
+  helpTopicLabel: {
+    marginLeft: 'auto',
+    fontSize: 13,
+    color: '#333',
+  },
+  helpTopicSelect: {
+    width: 260,
+    height: 32,
+    borderWidth: 1,
+    borderColor: '#AAA',
+    backgroundColor: '#EFEFEF',
     justifyContent: 'center',
   },
   picker: {
@@ -502,16 +477,41 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     fontSize: 13,
   },
-
-  // ── Error ──
+  ticketTitleRow: {
+    marginTop: 22,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  ticketTitleWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  ticketTitle: {
+    fontSize: 24,
+    color: '#2F6F91',
+    fontWeight: '500',
+  },
+  statusLinks: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  statusLink: {
+    color: '#334155',
+    fontWeight: '700',
+  },
+  statusSeparator: {
+    color: '#CBD5E1',
+  },
   errorContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     backgroundColor: '#FEF2F2',
-    margin: 16,
+    margin: 14,
     padding: 12,
-    borderRadius: 10,
+    borderRadius: 4,
     borderWidth: 1,
     borderColor: '#FECACA',
   },
@@ -527,8 +527,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textDecorationLine: 'underline',
   },
-
-  // ── Loading ──
   loadingContainer: {
     flex: 1,
     alignItems: 'center',
@@ -540,130 +538,82 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontWeight: '500',
   },
-
-  // ── Ticket List ──
   scrollList: {
     flex: 1,
   },
   listContent: {
-    padding: 16,
-    gap: 12,
+    paddingHorizontal: 14,
     paddingBottom: 40,
   },
-  listContentWide: {
-    paddingHorizontal: '8%',
+  ticketTable: {
+    minWidth: 1050,
+    borderWidth: 1,
+    borderColor: '#AAA',
+    backgroundColor: '#FFFFFF',
   },
-  gridLayout: {
+  tableCaption: {
+    backgroundColor: '#D8D3CB',
+    padding: 8,
+    fontWeight: '700',
+    color: '#111',
+  },
+  tableHeader: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 14,
+    backgroundColor: '#E9EEF0',
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#AAA',
   },
-
-  // ── Empty State ──
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 60,
-    paddingHorizontal: 32,
+  tableRow: {
+    flexDirection: 'row',
+    minHeight: 32,
+    borderBottomWidth: 1,
+    borderColor: '#C8C8C8',
   },
-  emptyIcon: {
-    fontSize: 48,
-    marginBottom: 12,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#0F172A',
-    marginBottom: 8,
+  emptyTableRow: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
   },
   emptyText: {
     fontSize: 13,
-    color: '#94A3B8',
-    textAlign: 'center',
-    lineHeight: 20,
+    color: '#64748B',
   },
-  clearFiltersBtn: {
-    marginTop: 16,
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    backgroundColor: '#EFF6FF',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
+  th: {
+    padding: 7,
+    fontWeight: '700',
+    borderRightWidth: 1,
+    borderColor: '#C8C8C8',
+    color: '#111',
   },
-  clearFiltersText: {
-    fontSize: 13,
-    color: '#1E40AF',
+  td: {
+    padding: 7,
+    borderRightWidth: 1,
+    borderColor: '#D0D0D0',
+    color: '#111',
+  },
+  tdLink: {
+    padding: 7,
+    borderRightWidth: 1,
+    borderColor: '#D0D0D0',
+    color: '#0B5F86',
     fontWeight: '700',
   },
-
-  // ── Ticket Card ──
-  ticketCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderLeftWidth: 4,
-    borderLeftColor: '#4F46E5',
-    padding: 16,
-    ...Platform.select({
-      ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6 },
-      android: { elevation: 2 },
-    }),
+  colTicket: {
+    width: 220,
   },
-  ticketCardWide: {
-    flex: 1,
-    minWidth: 260,
-    maxWidth: '48%',
+  colDate: {
+    width: 140,
   },
-  ticketCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
+  colStatus: {
+    width: 120,
   },
-  ticketNum: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#4F46E5',
-    letterSpacing: 0.3,
+  colSubject: {
+    width: 310,
   },
-  ticketDate: {
-    fontSize: 10,
-    color: '#94A3B8',
-    fontWeight: '500',
+  colDepartment: {
+    width: 260,
   },
-  ticketSubj: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#0F172A',
-    lineHeight: 20,
-    marginBottom: 10,
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  badgeText: {
-    fontSize: 9,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    color: '#0F172A',
-  },
-  badgeGray:   { backgroundColor: '#F1F5F9', borderColor: '#CBD5E1' },
-  badgeYellow: { backgroundColor: '#FEF9C3', borderColor: '#FDE047' },
-  badgeOrange: { backgroundColor: '#FFF1F2', borderColor: '#FDA4AF' },
-  badgeRed:    { backgroundColor: '#FEE2E2', borderColor: '#FCA5A5' },
-  badgeBlue:   { backgroundColor: '#EEF2FF', borderColor: '#C7D2FE' },
-  badgeGreen:  { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' },
-
-  // ── Modal ──
   modalContainer: {
     flex: 1,
     backgroundColor: '#F8FAFC',
@@ -677,10 +627,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     backgroundColor: '#FFFFFF',
     gap: 12,
-    ...Platform.select({
-      ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3 },
-      android: { elevation: 2 },
-    }),
   },
   modalMeta: {
     fontSize: 10,
@@ -709,8 +655,6 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 32,
   },
-
-  // ── Manage Status ──
   manageBox: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
@@ -741,8 +685,6 @@ const styles = StyleSheet.create({
     height: 40,
     color: '#0F172A',
   },
-
-  // ── Summary Card ──
   summaryCard: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
@@ -777,8 +719,6 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginTop: 2,
   },
-
-  // ── Timeline ──
   timelineHeader: {
     fontSize: 13,
     fontWeight: '800',
@@ -833,8 +773,6 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     lineHeight: 18,
   },
-
-  // ── Reply Box ──
   replyBox: {
     flexDirection: 'row',
     alignItems: 'flex-end',
