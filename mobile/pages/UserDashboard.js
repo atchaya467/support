@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -7,14 +7,25 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   Alert,
   Modal,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Picker } from '@react-native-picker/picker';
-import { RefreshCw, X, MessageSquare, Send, Check, AlertCircle, User } from 'lucide-react-native';
+import {
+  RefreshCw,
+  X,
+  MessageSquare,
+  Send,
+  Check,
+  AlertCircle,
+  User,
+  Mail,
+  Phone,
+  Clock,
+  Tag,
+} from 'lucide-react-native';
 import { API_BASE_URL, fetchWithTimeout } from '../config';
 
 export default function UserDashboard({ setView, userEmail }) {
@@ -34,26 +45,53 @@ export default function UserDashboard({ setView, userEmail }) {
   const [statusSuccess, setStatusSuccess] = useState(false);
   const [error, setError] = useState('');
 
+  const pageAnim = useRef(new Animated.Value(0)).current;
+  const modalAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(pageAnim, {
+      toValue: 1,
+      duration: 450,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+
   useEffect(() => {
     fetchTickets();
   }, [statusFilter, priorityFilter]);
+
+  useEffect(() => {
+    if (selectedTicket) {
+      modalAnim.setValue(0);
+      Animated.timing(modalAnim, {
+        toValue: 1,
+        duration: 350,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [selectedTicket]);
 
   const fetchTickets = async () => {
     setLoading(true);
     setError('');
 
     const params = new URLSearchParams();
+
     if (statusFilter) params.append('status', statusFilter);
     if (priorityFilter) params.append('priority', priorityFilter);
     if (searchText.trim()) params.append('search', searchText.trim());
 
-    const url = `${API_BASE_URL}/api/staff/tickets?${params.toString()}`;
+    const queryString = params.toString();
+    const url = queryString
+      ? `${API_BASE_URL}/api/staff/tickets?${queryString}`
+      : `${API_BASE_URL}/api/staff/tickets`;
 
     try {
       const response = await fetchWithTimeout(url);
       if (!response.ok) throw new Error('Failed to load tickets');
+
       const data = await response.json();
-      setTickets(data);
+      setTickets(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error(err);
       setError('Connection failure. Is the backend server running?');
@@ -70,8 +108,9 @@ export default function UserDashboard({ setView, userEmail }) {
     try {
       const response = await fetchWithTimeout(`${API_BASE_URL}/api/tickets/${ticket.id}/replies`);
       if (!response.ok) throw new Error('Failed to load replies');
+
       const data = await response.json();
-      setReplies(data);
+      setReplies(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -146,25 +185,93 @@ export default function UserDashboard({ setView, userEmail }) {
   const formatDate = (dateString) =>
     new Date(dateString).toLocaleDateString('en-GB');
 
+  const formatDateTime = (dateString) =>
+    new Date(dateString).toLocaleString('en-GB', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+  const allCount = tickets.length;
   const openCount = tickets.filter(t => t.status === 'Open').length;
   const closedCount = tickets.filter(t => t.status === 'Closed').length;
 
+  const getPriorityLabel = (priority) => priority || 'Normal';
+
+  const getPriorityBadgeStyle = (priority) => {
+    switch ((priority || 'Normal').toLowerCase()) {
+      case 'emergency':
+        return styles.priorityEmergency;
+      case 'high':
+        return styles.priorityHigh;
+      case 'medium':
+        return styles.priorityMedium;
+      case 'low':
+        return styles.priorityLow;
+      case 'normal':
+      default:
+        return styles.priorityNormal;
+    }
+  };
+
+  const getStatusBadgeStyle = (status) => {
+    switch ((status || 'Open').toLowerCase()) {
+      case 'closed':
+        return styles.statusClosed;
+      case 'resolved':
+        return styles.statusResolved;
+      case 'in progress':
+        return styles.statusProgress;
+      case 'open':
+      default:
+        return styles.statusOpen;
+    }
+  };
+
+  const pageAnimatedStyle = {
+    opacity: pageAnim,
+    transform: [
+      {
+        translateY: pageAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [18, 0],
+        }),
+      },
+    ],
+  };
+
+  const modalAnimatedStyle = {
+    opacity: modalAnim,
+    transform: [
+      {
+        translateY: modalAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [18, 0],
+        }),
+      },
+    ],
+  };
+
   return (
     <View style={styles.container}>
-      <View style={styles.ticketToolbar}>
+      <Animated.View style={[styles.ticketToolbar, pageAnimatedStyle]}>
         <View style={styles.searchRow}>
           <TextInput
             style={styles.searchInput}
             value={searchText}
             onChangeText={setSearchText}
             onSubmitEditing={fetchTickets}
+            placeholder="Search tickets..."
+            placeholderTextColor="#9CA3AF"
           />
 
           <TouchableOpacity style={styles.searchButton} onPress={fetchTickets}>
             <Text style={styles.searchButtonText}>Search</Text>
           </TouchableOpacity>
 
-          <Text style={styles.helpTopicLabel}>Help Topic:</Text>
+          <Text style={styles.helpTopicLabel}>Priority:</Text>
 
           <View style={styles.helpTopicSelect}>
             <Picker
@@ -172,8 +279,9 @@ export default function UserDashboard({ setView, userEmail }) {
               style={styles.picker}
               onValueChange={setPriorityFilter}
             >
-              <Picker.Item label="-- All Help Topics --" value="" />
+              <Picker.Item label="All Priorities" value="" />
               <Picker.Item label="Low" value="Low" />
+              <Picker.Item label="Normal" value="Normal" />
               <Picker.Item label="Medium" value="Medium" />
               <Picker.Item label="High" value="High" />
               <Picker.Item label="Emergency" value="Emergency" />
@@ -183,21 +291,35 @@ export default function UserDashboard({ setView, userEmail }) {
 
         <View style={styles.ticketTitleRow}>
           <View style={styles.ticketTitleWrap}>
-            <RefreshCw size={20} color="#5B8F22" />
-            <Text style={styles.ticketTitle}>Tickets</Text>
+            <RefreshCw size={20} color="#2563EB" />
+            <Text style={styles.ticketTitle}>All Tickets</Text>
           </View>
 
           <View style={styles.statusLinks}>
-            <TouchableOpacity onPress={() => setStatusFilter('Open')}>
-              <Text style={styles.statusLink}>Open ({openCount})</Text>
+            <TouchableOpacity onPress={() => setStatusFilter('')}>
+              <Text style={[styles.statusLink, !statusFilter && styles.statusLinkActive]}>
+                All ({allCount})
+              </Text>
             </TouchableOpacity>
+
             <Text style={styles.statusSeparator}>|</Text>
+
+            <TouchableOpacity onPress={() => setStatusFilter('Open')}>
+              <Text style={[styles.statusLink, statusFilter === 'Open' && styles.statusLinkActive]}>
+                Open ({openCount})
+              </Text>
+            </TouchableOpacity>
+
+            <Text style={styles.statusSeparator}>|</Text>
+
             <TouchableOpacity onPress={() => setStatusFilter('Closed')}>
-              <Text style={styles.statusLink}>Closed ({closedCount})</Text>
+              <Text style={[styles.statusLink, statusFilter === 'Closed' && styles.statusLinkActive]}>
+                Closed ({closedCount})
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </Animated.View>
 
       {error ? (
         <View style={styles.errorContainer}>
@@ -211,187 +333,266 @@ export default function UserDashboard({ setView, userEmail }) {
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#1E40AF" />
+          <ActivityIndicator size="large" color="#2563EB" />
           <Text style={styles.loadingText}>Loading tickets...</Text>
         </View>
       ) : (
         <ScrollView
           style={styles.scrollList}
           contentContainerStyle={styles.listContent}
-          horizontal={true}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={true}
         >
-          <View style={styles.ticketTable}>
-            <Text style={styles.tableCaption}>
-              Showing 1 - {tickets.length} of {tickets.length} Open Tickets
-            </Text>
+          <ScrollView
+            horizontal
+            keyboardShouldPersistTaps="handled"
+            showsHorizontalScrollIndicator={true}
+          >
+            <Animated.View style={[styles.ticketTable, pageAnimatedStyle]}>
+              <Text style={styles.tableCaption}>
+                Showing {tickets.length} ticket{tickets.length !== 1 ? 's' : ''}
+              </Text>
 
-            <View style={styles.tableHeader}>
-              <Text style={[styles.th, styles.colTicket]}>Ticket #</Text>
-              <Text style={[styles.th, styles.colDate]}>Create Date</Text>
-              <Text style={[styles.th, styles.colStatus]}>Status</Text>
-              <Text style={[styles.th, styles.colSubject]}>Subject</Text>
-              <Text style={[styles.th, styles.colDepartment]}>Department</Text>
-            </View>
-
-            {tickets.length === 0 ? (
-              <View style={styles.emptyTableRow}>
-                <Text style={styles.emptyText}>No tickets found.</Text>
+              <View style={styles.tableHeader}>
+                <Text style={[styles.th, styles.colTicket]}>Ticket #</Text>
+                <Text style={[styles.th, styles.colDate]}>Create Date</Text>
+                <Text style={[styles.th, styles.colStatus]}>Status</Text>
+                <Text style={[styles.th, styles.colSubject]}>Subject</Text>
+                <Text style={[styles.th, styles.colDepartment]}>Priority</Text>
               </View>
-            ) : (
-              tickets.map(ticket => (
-                <TouchableOpacity
-                  key={ticket.id}
-                  style={styles.tableRow}
-                  onPress={() => handleSelectTicket(ticket)}
-                  activeOpacity={0.75}
-                >
-                  <Text style={[styles.tdLink, styles.colTicket]} numberOfLines={1}>
-                    {ticket.ticket_number}
-                  </Text>
 
-                  <Text style={[styles.td, styles.colDate]}>
-                    {formatDate(ticket.created_at)}
-                  </Text>
+              {tickets.length === 0 ? (
+                <View style={styles.emptyTableRow}>
+                  <Text style={styles.emptyText}>No tickets found.</Text>
+                </View>
+              ) : (
+                tickets.map(ticket => (
+                  <TouchableOpacity
+                    key={ticket.id}
+                    style={styles.tableRow}
+                    onPress={() => handleSelectTicket(ticket)}
+                    activeOpacity={0.82}
+                  >
+                    <Text style={[styles.tdLink, styles.colTicket]} numberOfLines={1}>
+                      {ticket.ticket_number}
+                    </Text>
 
-                  <Text style={[styles.td, styles.colStatus]}>
-                    {ticket.status}
-                  </Text>
+                    <Text style={[styles.td, styles.colDate]}>
+                      {formatDate(ticket.created_at)}
+                    </Text>
 
-                  <Text style={[styles.tdLink, styles.colSubject]} numberOfLines={1}>
-                    {ticket.help_topic_name || 'Support Ticket'}
-                  </Text>
+                    <View style={[styles.td, styles.colStatus]}>
+                      <View style={[styles.statusBadge, getStatusBadgeStyle(ticket.status)]}>
+                        <Text style={styles.statusBadgeText}>{ticket.status}</Text>
+                      </View>
+                    </View>
 
-                  <Text style={[styles.td, styles.colDepartment]} numberOfLines={1}>
-                    {ticket.priority || 'L1 Leykart'}
-                  </Text>
-                </TouchableOpacity>
-              ))
-            )}
-          </View>
+                    <Text style={[styles.tdLink, styles.colSubject]} numberOfLines={1}>
+                      {ticket.help_topic_name || 'Support Ticket'}
+                    </Text>
+
+                    <View style={[styles.td, styles.colDepartment]}>
+                      <View style={[styles.priorityBadge, getPriorityBadgeStyle(ticket.priority)]}>
+                        <Text style={styles.priorityBadgeText}>
+                          {getPriorityLabel(ticket.priority)}
+                        </Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                ))
+              )}
+            </Animated.View>
+          </ScrollView>
         </ScrollView>
       )}
 
       <Modal
         visible={!!selectedTicket}
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setSelectedTicket(null)}
       >
         {selectedTicket && (
-          <SafeAreaView style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.modalMeta}>
-                  {selectedTicket.ticket_number} - {selectedTicket.help_topic_name}
-                </Text>
-                <Text style={styles.modalTitle} numberOfLines={1}>
-                  {selectedTicket.name}
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                style={styles.closeBtn}
-                onPress={() => setSelectedTicket(null)}
-              >
-                <X size={20} color="#0F172A" />
-              </TouchableOpacity>
-            </View>
-
-            <KeyboardAvoidingView
-              style={{ flex: 1 }}
-              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-              keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
-            >
-              <ScrollView
-                style={styles.modalScroll}
-                contentContainerStyle={styles.modalScrollContent}
-                keyboardShouldPersistTaps="handled"
-              >
-                <View style={styles.manageBox}>
-                  <Text style={styles.manageLabel}>Status:</Text>
-
-                  <View style={styles.statusPickerWrapper}>
-                    <Picker
-                      selectedValue={selectedTicket.status}
-                      style={styles.statusPicker}
-                      onValueChange={handleStatusChange}
-                      enabled={!updatingStatus}
-                    >
-                      <Picker.Item label="Open" value="Open" />
-                      <Picker.Item label="In Progress" value="In Progress" />
-                      <Picker.Item label="Resolved" value="Resolved" />
-                      <Picker.Item label="Closed" value="Closed" />
-                    </Picker>
-                  </View>
-
-                  {updatingStatus && <ActivityIndicator size="small" color="#1E40AF" />}
-                  {statusSuccess && <Check size={16} color="#10B981" />}
+          <SafeAreaView style={styles.detailPage}>
+            <Animated.View style={[styles.detailPageInner, modalAnimatedStyle]}>
+              <View style={styles.detailHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.detailTicketNo}>{selectedTicket.ticket_number}</Text>
+                  <Text style={styles.detailTitle} numberOfLines={1}>
+                    {selectedTicket.help_topic_name || 'Support Ticket'}
+                  </Text>
                 </View>
 
-                <View style={styles.summaryCard}>
-                  <View style={styles.summaryRow}>
-                    <User size={14} color="#1E40AF" />
-                    <View style={styles.summaryCol}>
-                      <Text style={styles.summaryHeader}>Customer</Text>
-                      <Text style={styles.summaryVal}>{selectedTicket.name}</Text>
-                      <Text style={styles.summarySub}>
-                        {selectedTicket.email} - {selectedTicket.phone}
+                <TouchableOpacity
+                  style={styles.detailCloseBtn}
+                  onPress={() => setSelectedTicket(null)}
+                >
+                  <X size={22} color="#111827" />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView
+                style={styles.detailScroll}
+                contentContainerStyle={styles.detailContent}
+                keyboardShouldPersistTaps="handled"
+              >
+                <View style={styles.detailHeroCard}>
+                  <View style={styles.detailHeroTop}>
+                    <View>
+                      <Text style={styles.detailMetaLabel}>Ticket</Text>
+                      <Text style={styles.detailHeroTitle}>{selectedTicket.ticket_number}</Text>
+                    </View>
+
+                    <View style={styles.detailBadgeRow}>
+                      <View style={[styles.detailBadge, getStatusBadgeStyle(selectedTicket.status)]}>
+                        <Text style={styles.detailBadgeText}>{selectedTicket.status}</Text>
+                      </View>
+
+                      <View style={[styles.detailBadge, getPriorityBadgeStyle(selectedTicket.priority)]}>
+                        <Text style={styles.detailBadgeText}>
+                          {selectedTicket.priority || 'Normal'}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  <Text style={styles.detailSubject}>
+                    {selectedTicket.help_topic_name || 'Support Ticket'}
+                  </Text>
+                </View>
+
+                <View style={styles.detailInfoGrid}>
+                  <View style={styles.detailInfoCard}>
+                    <Text style={styles.detailSectionTitle}>Basic Ticket Information</Text>
+
+                    <View style={styles.detailInfoRow}>
+                      <Clock size={14} color="#2563EB" />
+                      <Text style={styles.detailInfoLabel}>Create Date</Text>
+                      <Text style={styles.detailInfoValue}>
+                        {formatDateTime(selectedTicket.created_at)}
                       </Text>
+                    </View>
+
+                    <View style={styles.detailInfoRow}>
+                      <Tag size={14} color="#2563EB" />
+                      <Text style={styles.detailInfoLabel}>Priority</Text>
+                      <Text style={styles.detailInfoValue}>
+                        {selectedTicket.priority || 'Normal'}
+                      </Text>
+                    </View>
+
+                    <View style={styles.detailInfoRow}>
+                      <RefreshCw size={14} color="#2563EB" />
+                      <Text style={styles.detailInfoLabel}>Status</Text>
+                      <Text style={styles.detailInfoValue}>{selectedTicket.status}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.detailInfoCard}>
+                    <Text style={styles.detailSectionTitle}>User Information</Text>
+
+                    <View style={styles.detailInfoRow}>
+                      <User size={14} color="#2563EB" />
+                      <Text style={styles.detailInfoLabel}>Name</Text>
+                      <Text style={styles.detailInfoValue}>{selectedTicket.name}</Text>
+                    </View>
+
+                    <View style={styles.detailInfoRow}>
+                      <Mail size={14} color="#2563EB" />
+                      <Text style={styles.detailInfoLabel}>Email</Text>
+                      <Text style={styles.detailInfoValue}>{selectedTicket.email}</Text>
+                    </View>
+
+                    <View style={styles.detailInfoRow}>
+                      <Phone size={14} color="#2563EB" />
+                      <Text style={styles.detailInfoLabel}>Phone</Text>
+                      <Text style={styles.detailInfoValue}>{selectedTicket.phone}</Text>
                     </View>
                   </View>
                 </View>
 
-                <Text style={styles.timelineHeader}>
-                  <MessageSquare size={14} color="#0F172A" /> Conversation ({replies.length})
-                </Text>
+                <View style={styles.detailManageCard}>
+                  <Text style={styles.detailSectionTitle}>Update Status</Text>
+
+                  <View style={styles.detailStatusRow}>
+                    <Text style={styles.detailInfoLabel}>Status</Text>
+
+                    <View style={styles.detailStatusPicker}>
+                      <Picker
+                        selectedValue={selectedTicket.status}
+                        style={styles.statusPicker}
+                        onValueChange={handleStatusChange}
+                        enabled={!updatingStatus}
+                      >
+                        <Picker.Item label="Open" value="Open" />
+                        <Picker.Item label="In Progress" value="In Progress" />
+                        <Picker.Item label="Resolved" value="Resolved" />
+                        <Picker.Item label="Closed" value="Closed" />
+                      </Picker>
+                    </View>
+
+                    {updatingStatus && <ActivityIndicator size="small" color="#2563EB" />}
+                    {statusSuccess && <Check size={16} color="#10B981" />}
+                  </View>
+                </View>
+
+                <View style={styles.detailMessageCard}>
+                  <View style={styles.detailMessageHeader}>
+                    <MessageSquare size={15} color="#2563EB" />
+                    <Text style={styles.detailMessageAuthor}>
+                      {selectedTicket.name} posted {formatDateTime(selectedTicket.created_at)}
+                    </Text>
+                  </View>
+
+                  <Text style={styles.detailMessageBody}>
+                    {selectedTicket.help_topic_name || 'Ticket created.'}
+                  </Text>
+                </View>
+
+                <View style={styles.detailConversationHeader}>
+                  <MessageSquare size={15} color="#111827" />
+                  <Text style={styles.detailConversationTitle}>
+                    Conversation ({replies.length})
+                  </Text>
+                </View>
 
                 {repliesLoading ? (
-                  <ActivityIndicator
-                    size="small"
-                    color="#1E40AF"
-                    style={{ marginVertical: 16 }}
-                  />
+                  <ActivityIndicator size="small" color="#2563EB" style={{ marginVertical: 16 }} />
                 ) : replies.length === 0 ? (
-                  <Text style={styles.emptyReplies}>No messages yet.</Text>
+                  <View style={styles.detailEmptyBox}>
+                    <Text style={styles.detailEmptyText}>No messages yet.</Text>
+                  </View>
                 ) : (
-                  <View style={styles.timelineList}>
+                  <View style={styles.detailTimeline}>
                     {replies.map(reply => (
                       <View
                         key={reply.id}
                         style={[
-                          styles.replyBubble,
+                          styles.detailReplyBubble,
                           reply.sender === 'Staff'
-                            ? styles.bubbleStaff
-                            : styles.bubbleClient,
+                            ? styles.detailReplyStaff
+                            : styles.detailReplyClient,
                         ]}
                       >
-                        <View style={styles.replyMeta}>
-                          <Text
-                            style={[
-                              styles.replySender,
-                              reply.sender === 'Staff'
-                                ? styles.senderStaffText
-                                : styles.senderClientText,
-                            ]}
-                          >
+                        <View style={styles.detailReplyMeta}>
+                          <Text style={styles.detailReplySender}>
                             {reply.sender === 'Staff' ? 'Support Team' : reply.name}
                           </Text>
 
-                          <Text style={styles.replyDate}>
+                          <Text style={styles.detailReplyDate}>
                             {formatDate(reply.created_at)}
                           </Text>
                         </View>
 
-                        <Text style={styles.replyMsg}>{reply.message}</Text>
+                        <Text style={styles.detailReplyMessage}>{reply.message}</Text>
                       </View>
                     ))}
                   </View>
                 )}
               </ScrollView>
 
-              <View style={styles.replyBox}>
+              <View style={styles.detailReplyBox}>
                 <TextInput
-                  style={styles.replyInput}
+                  style={styles.detailReplyInput}
                   placeholder="Write a reply..."
                   placeholderTextColor="#94A3B8"
                   multiline
@@ -402,8 +603,8 @@ export default function UserDashboard({ setView, userEmail }) {
 
                 <TouchableOpacity
                   style={[
-                    styles.sendBtn,
-                    !newReply.trim() && styles.sendBtnDisabled,
+                    styles.detailSendBtn,
+                    !newReply.trim() && styles.detailSendBtnDisabled,
                   ]}
                   onPress={handlePostReply}
                   disabled={submittingReply || !newReply.trim()}
@@ -415,7 +616,7 @@ export default function UserDashboard({ setView, userEmail }) {
                   )}
                 </TouchableOpacity>
               </View>
-            </KeyboardAvoidingView>
+            </Animated.View>
           </SafeAreaView>
         )}
       </Modal>
@@ -426,55 +627,68 @@ export default function UserDashboard({ setView, userEmail }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F4F4F4',
+    backgroundColor: '#F5F7FB',
   },
   ticketToolbar: {
-    backgroundColor: '#F4F4F4',
-    padding: 14,
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 3,
   },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
     flexWrap: 'wrap',
   },
   searchInput: {
     width: 320,
-    height: 30,
+    height: 40,
     borderWidth: 1,
-    borderColor: '#555',
+    borderColor: '#D1D5DB',
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 8,
-    color: '#111',
+    borderRadius: 10,
+    paddingHorizontal: 13,
+    color: '#111827',
   },
   searchButton: {
-    height: 30,
+    height: 40,
     borderWidth: 1,
-    borderColor: '#777',
-    backgroundColor: '#EFEFEF',
-    paddingHorizontal: 14,
+    borderColor: '#2563EB',
+    backgroundColor: '#2563EB',
+    borderRadius: 10,
+    paddingHorizontal: 18,
     justifyContent: 'center',
   },
   searchButtonText: {
     fontSize: 13,
-    color: '#111',
+    color: '#FFFFFF',
+    fontWeight: '800',
   },
   helpTopicLabel: {
     marginLeft: 'auto',
     fontSize: 13,
-    color: '#333',
+    color: '#374151',
+    fontWeight: '800',
   },
   helpTopicSelect: {
     width: 260,
-    height: 32,
+    height: 40,
     borderWidth: 1,
-    borderColor: '#AAA',
-    backgroundColor: '#EFEFEF',
+    borderColor: '#D1D5DB',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   picker: {
     height: 42,
-    color: '#0F172A',
+    color: '#111827',
     fontSize: 13,
   },
   ticketTitleRow: {
@@ -486,20 +700,23 @@ const styles = StyleSheet.create({
   ticketTitleWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
   ticketTitle: {
     fontSize: 24,
-    color: '#2F6F91',
-    fontWeight: '500',
+    color: '#111827',
+    fontWeight: '900',
   },
   statusLinks: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 10,
   },
   statusLink: {
-    color: '#334155',
-    fontWeight: '700',
+    color: '#64748B',
+    fontWeight: '900',
+  },
+  statusLinkActive: {
+    color: '#2563EB',
   },
   statusSeparator: {
     color: '#CBD5E1',
@@ -509,22 +726,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     backgroundColor: '#FEF2F2',
-    margin: 14,
+    margin: 16,
     padding: 12,
-    borderRadius: 4,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#FECACA',
   },
   errorText: {
     fontSize: 13,
     color: '#B91C1C',
-    fontWeight: '600',
+    fontWeight: '700',
     flex: 1,
   },
   retryText: {
     fontSize: 12,
-    color: '#1E40AF',
-    fontWeight: '700',
+    color: '#2563EB',
+    fontWeight: '800',
     textDecorationLine: 'underline',
   },
   loadingContainer: {
@@ -536,42 +753,51 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 13,
     color: '#64748B',
-    fontWeight: '500',
+    fontWeight: '600',
   },
   scrollList: {
     flex: 1,
   },
   listContent: {
-    paddingHorizontal: 14,
-    paddingBottom: 40,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    paddingBottom: 80,
   },
   ticketTable: {
     minWidth: 1050,
     borderWidth: 1,
-    borderColor: '#AAA',
+    borderColor: '#E5E7EB',
     backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    elevation: 4,
   },
   tableCaption: {
-    backgroundColor: '#D8D3CB',
-    padding: 8,
-    fontWeight: '700',
-    color: '#111',
+    backgroundColor: '#F9FAFB',
+    padding: 13,
+    fontWeight: '900',
+    color: '#111827',
   },
   tableHeader: {
     flexDirection: 'row',
-    backgroundColor: '#E9EEF0',
+    backgroundColor: '#F3F4F6',
     borderTopWidth: 1,
     borderBottomWidth: 1,
-    borderColor: '#AAA',
+    borderColor: '#E5E7EB',
   },
   tableRow: {
     flexDirection: 'row',
-    minHeight: 32,
+    minHeight: 52,
     borderBottomWidth: 1,
-    borderColor: '#C8C8C8',
+    borderColor: '#EEF2F7',
+    backgroundColor: '#FFFFFF',
   },
   emptyTableRow: {
-    minHeight: 44,
+    minHeight: 50,
     justifyContent: 'center',
     paddingHorizontal: 12,
   },
@@ -580,24 +806,27 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   th: {
-    padding: 7,
-    fontWeight: '700',
+    padding: 11,
+    fontWeight: '900',
     borderRightWidth: 1,
-    borderColor: '#C8C8C8',
-    color: '#111',
+    borderColor: '#E5E7EB',
+    color: '#374151',
+    fontSize: 12,
+    textTransform: 'uppercase',
   },
   td: {
-    padding: 7,
+    padding: 11,
     borderRightWidth: 1,
-    borderColor: '#D0D0D0',
-    color: '#111',
+    borderColor: '#F1F5F9',
+    color: '#111827',
+    justifyContent: 'center',
   },
   tdLink: {
-    padding: 7,
+    padding: 11,
     borderRightWidth: 1,
-    borderColor: '#D0D0D0',
-    color: '#0B5F86',
-    fontWeight: '700',
+    borderColor: '#F1F5F9',
+    color: '#2563EB',
+    fontWeight: '900',
   },
   colTicket: {
     width: 220,
@@ -606,203 +835,362 @@ const styles = StyleSheet.create({
     width: 140,
   },
   colStatus: {
-    width: 120,
+    width: 130,
   },
   colSubject: {
-    width: 310,
+    width: 300,
   },
   colDepartment: {
     width: 260,
   },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
+  priorityBadge: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderWidth: 1,
   },
-  modalHeader: {
-    height: 64,
+  priorityBadgeText: {
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    color: '#111827',
+  },
+  priorityEmergency: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#FCA5A5',
+  },
+  priorityHigh: {
+    backgroundColor: '#FFEDD5',
+    borderColor: '#FDBA74',
+  },
+  priorityNormal: {
+    backgroundColor: '#DBEAFE',
+    borderColor: '#93C5FD',
+  },
+  priorityMedium: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FCD34D',
+  },
+  priorityLow: {
+    backgroundColor: '#F3F4F6',
+    borderColor: '#D1D5DB',
+  },
+  statusBadge: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+  },
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    color: '#111827',
+  },
+  statusOpen: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#86EFAC',
+  },
+  statusProgress: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FCD34D',
+  },
+  statusResolved: {
+    backgroundColor: '#DBEAFE',
+    borderColor: '#93C5FD',
+  },
+  statusClosed: {
+    backgroundColor: '#F3F4F6',
+    borderColor: '#D1D5DB',
+  },
+  detailPage: {
+    flex: 1,
+    backgroundColor: '#F5F7FB',
+  },
+  detailPageInner: {
+    flex: 1,
+  },
+  detailHeader: {
+    height: 72,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: '#E5E7EB',
+    paddingHorizontal: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    backgroundColor: '#FFFFFF',
-    gap: 12,
+    gap: 14,
   },
-  modalMeta: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#4F46E5',
-    letterSpacing: 0.3,
+  detailTicketNo: {
+    fontSize: 12,
+    color: '#2563EB',
+    fontWeight: '900',
   },
-  modalTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#0F172A',
-    marginTop: 2,
+  detailTitle: {
+    fontSize: 18,
+    color: '#111827',
+    fontWeight: '900',
+    marginTop: 3,
   },
-  closeBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
+  detailCloseBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
     backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  modalScroll: {
+  detailScroll: {
     flex: 1,
   },
-  modalScrollContent: {
-    padding: 20,
-    paddingBottom: 32,
+  detailContent: {
+    padding: 16,
+    paddingBottom: 24,
   },
-  manageBox: {
+  detailHeroCard: {
     backgroundColor: '#FFFFFF',
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    padding: 12,
+    borderColor: '#E5E7EB',
+    padding: 18,
+    marginBottom: 14,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    elevation: 4,
+  },
+  detailHeroTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  detailMetaLabel: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  detailHeroTitle: {
+    fontSize: 22,
+    color: '#111827',
+    fontWeight: '900',
+    marginTop: 3,
+  },
+  detailSubject: {
+    marginTop: 14,
+    fontSize: 15,
+    color: '#374151',
+    fontWeight: '700',
+  },
+  detailBadgeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+  },
+  detailBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+  },
+  detailBadgeText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#111827',
+    textTransform: 'uppercase',
+  },
+  detailInfoGrid: {
+    flexDirection: 'row',
+    gap: 14,
+    marginBottom: 14,
+  },
+  detailInfoCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 16,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+    elevation: 3,
+  },
+  detailSectionTitle: {
+    fontSize: 15,
+    color: '#111827',
+    fontWeight: '900',
+    marginBottom: 12,
+  },
+  detailInfoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 16,
+    gap: 8,
+    marginBottom: 10,
   },
-  manageLabel: {
+  detailInfoLabel: {
+    width: 92,
     fontSize: 13,
+    color: '#64748B',
     fontWeight: '700',
-    color: '#0F172A',
   },
-  statusPickerWrapper: {
+  detailInfoValue: {
     flex: 1,
-    height: 40,
+    fontSize: 13,
+    color: '#111827',
+    fontWeight: '800',
+  },
+  detailManageCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 16,
+    marginBottom: 14,
+  },
+  detailStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  detailStatusPicker: {
+    flex: 1,
+    height: 42,
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 8,
+    borderColor: '#D1D5DB',
+    borderRadius: 10,
     overflow: 'hidden',
     justifyContent: 'center',
   },
   statusPicker: {
-    height: 40,
+    height: 42,
     color: '#0F172A',
   },
-  summaryCard: {
+  detailMessageCard: {
     backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+    borderColor: '#CBD5E1',
+    overflow: 'hidden',
+    marginBottom: 14,
   },
-  summaryRow: {
-    flexDirection: 'row',
-    gap: 10,
-    alignItems: 'flex-start',
-  },
-  summaryCol: {
-    flex: 1,
-  },
-  summaryHeader: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#4F46E5',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  summaryVal: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginTop: 4,
-  },
-  summarySub: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  timelineHeader: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#0F172A',
-    marginBottom: 12,
-  },
-  emptyReplies: {
-    fontSize: 13,
-    color: '#94A3B8',
-    textAlign: 'center',
-    paddingVertical: 20,
-  },
-  timelineList: {
-    gap: 10,
-  },
-  replyBubble: {
-    borderRadius: 10,
+  detailMessageHeader: {
+    backgroundColor: '#DBEAFE',
     padding: 12,
-    borderWidth: 1,
+    borderBottomWidth: 1,
+    borderBottomColor: '#BFDBFE',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
-  bubbleStaff: {
+  detailMessageAuthor: {
+    fontSize: 13,
+    color: '#111827',
+    fontWeight: '900',
+  },
+  detailMessageBody: {
+    padding: 14,
+    minHeight: 54,
+    fontSize: 14,
+    color: '#111827',
+  },
+  detailConversationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  detailConversationTitle: {
+    fontSize: 15,
+    color: '#111827',
+    fontWeight: '900',
+  },
+  detailEmptyBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 20,
+    alignItems: 'center',
+  },
+  detailEmptyText: {
+    color: '#94A3B8',
+    fontWeight: '700',
+  },
+  detailTimeline: {
+    gap: 10,
+  },
+  detailReplyBubble: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 12,
+  },
+  detailReplyStaff: {
     backgroundColor: '#EFF6FF',
     borderColor: '#BFDBFE',
-    marginLeft: 20,
+    marginLeft: 24,
   },
-  bubbleClient: {
-    backgroundColor: '#F8FAFC',
-    borderColor: '#E2E8F0',
-    marginRight: 20,
+  detailReplyClient: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E5E7EB',
+    marginRight: 24,
   },
-  replyMeta: {
+  detailReplyMeta: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 6,
   },
-  replySender: {
+  detailReplySender: {
+    fontSize: 12,
+    color: '#111827',
+    fontWeight: '900',
+  },
+  detailReplyDate: {
     fontSize: 11,
-    fontWeight: '800',
-  },
-  senderStaffText: {
-    color: '#1E40AF',
-  },
-  senderClientText: {
-    color: '#475569',
-  },
-  replyDate: {
-    fontSize: 10,
     color: '#94A3B8',
   },
-  replyMsg: {
+  detailReplyMessage: {
     fontSize: 13,
-    color: '#0F172A',
-    lineHeight: 18,
+    color: '#111827',
+    lineHeight: 19,
   },
-  replyBox: {
+  detailReplyBox: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 10,
     padding: 12,
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
+    borderTopColor: '#E5E7EB',
   },
-  replyInput: {
+  detailReplyInput: {
     flex: 1,
+    minHeight: 46,
+    maxHeight: 90,
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 10,
-    paddingHorizontal: 12,
+    borderColor: '#D1D5DB',
+    borderRadius: 14,
+    paddingHorizontal: 14,
     paddingVertical: 10,
-    fontSize: 14,
-    color: '#0F172A',
-    maxHeight: 100,
+    color: '#111827',
+    textAlignVertical: 'top',
   },
-  sendBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 10,
-    backgroundColor: '#4F46E5',
+  detailSendBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: '#2563EB',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sendBtnDisabled: {
+  detailSendBtnDisabled: {
     backgroundColor: '#CBD5E1',
   },
 });
