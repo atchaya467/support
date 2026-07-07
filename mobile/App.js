@@ -38,16 +38,78 @@ function FadeInView({ children, viewKey }) {
   );
 }
 
+const isWeb = Platform.OS === 'web' && typeof window !== 'undefined' && window.localStorage;
+
+const getStoredValue = (key, defaultValue) => {
+  if (isWeb) {
+    try {
+      const val = window.localStorage.getItem(key);
+      if (val !== null) {
+        return JSON.parse(val);
+      }
+    } catch (e) {
+      console.warn('Error reading from localStorage', e);
+    }
+  }
+  return defaultValue;
+};
+
+const setStoredValue = (key, value) => {
+  if (isWeb) {
+    try {
+      window.localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {
+      console.warn('Error writing to localStorage', e);
+    }
+  }
+};
+
 export default function App() {
   const { width } = useWindowDimensions();
   const isWide = width >= 768;
 
-  const [currentView, setView] = useState('user-login');
-  const [isUserAuthenticated, setIsUserAuthenticated] = useState(false);
-  const [userEmail, setUserEmail] = useState('');
-  const [userName, setUserName] = useState('');
-  const [userPhone, setUserPhone] = useState('');
-  const [trackCredentials, setTrackCredentials] = useState(null);
+  const [isUserAuthenticated, setIsUserAuthenticated] = useState(() =>
+    getStoredValue('isUserAuthenticated', false)
+  );
+  const [currentView, setView] = useState(() =>
+    getStoredValue('currentView', 'user-login')
+  );
+  const [userEmail, setUserEmail] = useState(() =>
+    getStoredValue('userEmail', '')
+  );
+  const [userName, setUserName] = useState(() =>
+    getStoredValue('userName', '')
+  );
+  const [userPhone, setUserPhone] = useState(() =>
+    getStoredValue('userPhone', '')
+  );
+  const [trackCredentials, setTrackCredentials] = useState(() =>
+    getStoredValue('trackCredentials', null)
+  );
+
+  useEffect(() => {
+    setStoredValue('isUserAuthenticated', isUserAuthenticated);
+  }, [isUserAuthenticated]);
+
+  useEffect(() => {
+    setStoredValue('currentView', currentView);
+  }, [currentView]);
+
+  useEffect(() => {
+    setStoredValue('userEmail', userEmail);
+  }, [userEmail]);
+
+  useEffect(() => {
+    setStoredValue('userName', userName);
+  }, [userName]);
+
+  useEffect(() => {
+    setStoredValue('userPhone', userPhone);
+  }, [userPhone]);
+
+  useEffect(() => {
+    setStoredValue('trackCredentials', trackCredentials);
+  }, [trackCredentials]);
 
   const handleUserLoginSuccess = (email, name = '', phone = '') => {
     setIsUserAuthenticated(true);
@@ -68,8 +130,9 @@ export default function App() {
 
   const renderScreen = () => {
     let screen;
+    const activeView = isUserAuthenticated ? currentView : 'user-login';
 
-    switch (currentView) {
+    switch (activeView) {
       case 'user-login':
         screen = <UserLogin onLoginSuccess={handleUserLoginSuccess} />;
         break;
@@ -108,7 +171,7 @@ export default function App() {
     }
 
     return (
-      <FadeInView key={currentView} viewKey={currentView}>
+      <FadeInView key={activeView} viewKey={activeView}>
         {screen}
       </FadeInView>
     );

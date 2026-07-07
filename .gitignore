@@ -28,3 +28,13 @@ yarn-error.log*
 Thumbs.db
 .idea/
 .vscode/
+
+# Databases
+*.db
+support.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+env/
